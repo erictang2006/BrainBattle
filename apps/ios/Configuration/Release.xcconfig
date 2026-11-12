@@ -1,0 +1,3 @@
+// Replace these with your deployed HTTPS origins before archiving.
+BRAIN_API_ORIGIN = https:/$()/api.invalid
+BRAIN_WEB_ORIGIN = https:/$()/web.invalid

@@ -1,0 +1,34 @@
+node_modules/
+.next/
+.env
+.env.local
+.data/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+apps/ios/build/
+apps/ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult/
+
+# Local environment variants; commit only the documented example.
+.env.*
+!.env.example
+
+# macOS, archives, logs, and private Apple signing material.
+.DS_Store
+*.log
+*.xcarchive/
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+*.pem
+*.key
+
+# Machine-local agent and cloud credentials.
+.codex/
+.aws/
+.ssh/

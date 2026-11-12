@@ -1,0 +1,35 @@
+{
+  "name": "brain-battle",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @brain/api\" \"npm run dev -w @brain/web\"",
+    "build": "npm run typecheck && npm run build -w @brain/web",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck -w @brain/web",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "format": "prettier --write . --ignore-path .gitignore",
+    "db:migrate": "tsx packages/db/src/migrate.ts",
+    "start": "concurrently -k -n api,web \"npm run start -w @brain/api\" \"npm run start -w @brain/web\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "concurrently": "^9.2.0",
+    "dotenv": "^17.2.0",
+    "tsx": "^4.20.0"
+  }
+}
