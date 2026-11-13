@@ -103,7 +103,7 @@ import Observation
         }
         _ = try await api.joinLiveRoom(code: code)
         try await socket.run(baseURL: api.baseURL, credential: api.liveCredential())
-      } catch let problem as APIError where [401, 403, 404, 409].contains(problem.status) {
+      } catch let problem as APIError where [401, 403, 404, 409, 410].contains(problem.status) {
         self.error = problem.message
         break
       } catch {

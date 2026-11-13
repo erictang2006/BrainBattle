@@ -191,7 +191,7 @@ enum AppRoute: Hashable {
       return
     }
     guard let token = InvitationLink.token(from: input, webOrigin: configuration.webURL) else {
-      error = "Use a Brain Battle invitation from \(configuration.webURL.host ?? "your server")."
+      error = "Paste the 48-character challenge code, or a Brain Battle invitation."
       return
     }
     if profile == nil || needsOnboarding {

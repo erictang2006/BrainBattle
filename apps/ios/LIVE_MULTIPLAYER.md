@@ -34,7 +34,7 @@ A four-second persisted intermission follows every non-final round. Each next ro
 
 ## Local testing
 
-Keep the existing API on port 4000. Open `apps/ios/BrainBattle.xcodeproj`, choose the BrainBattle scheme and an iPhone Simulator, then Run. Choose **Play Live**, create a room, share its six-character code, and join from the second Simulator using its own guest session. Native links use `brainbattle://room/CODE`; these are custom scheme links, not configured universal links. Physical phones need the existing LAN/HTTPS API configuration.
+Keep the existing API on port 4000. Open `apps/ios/BrainBattle.xcodeproj`, choose the BrainBattle scheme and an iPhone Simulator, then Run. Choose **Play Live**, create a room, share its six-character code, and join from the second Simulator using its own guest session. Native sharing now sends a plain room code plus instructions and needs no website. Existing `brainbattle://room/CODE` links remain supported; these are custom scheme links, not configured universal links. See [native-only beta readiness](NATIVE_BETA_READINESS.md). Physical phones need the existing LAN/HTTPS API configuration.
 
 `npm test` covers the server and async regressions. Native `BrainBattleTests/LiveIntegrationTests` creates fresh guests through the existing local API, then tests two actual native Socket.IO transports, reconnect and finalized results. It skips when the local API cannot establish a guest session. It never opens the database directly.
 
@@ -76,3 +76,9 @@ xcodebuild -project apps/ios/BrainBattle.xcodeproj -scheme BrainBattle \
 ```
 
 Use different explicit result bundle paths when running `test-without-building` on multiple Simulators concurrently. Stop the helper when testing is complete. The shared package's `@brain/shared/live` entry point contains runtime live validators; the original entry point re-exports live types only, keeping Next.js source-module resolution compatible.
+
+## Final native beta audit
+
+The final audit adds bounded, atomic room-code collision retries for create/rematch and clear expired-room errors. Redeploy the existing API to apply these changes; no migration or new service is required. Final validation includes 34 backend tests, 23 native Release tests on an independent retry, and four hosted Release UI cases covering complete async/solo games, relaunch/background recovery, 1v1 joining and native eight-player hosting. See [the readiness report](NATIVE_BETA_READINESS.md) for the initial network timeout and physical-device/upload limits.
+
+To run the existing live UI checks against the hosted API, start the test-only peer helper with `BRAIN_TEST_API=https://brain-battle-api.onrender.com node --import tsx scripts/live-ui-fixture.ts`. The helper supplies automated players, not game authority or a website, and should be stopped after testing.

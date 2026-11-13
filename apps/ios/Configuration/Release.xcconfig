@@ -1,3 +1,4 @@
-// Replace these with your deployed HTTPS origins before archiving.
-BRAIN_API_ORIGIN = https:/$()/api.invalid
-BRAIN_WEB_ORIGIN = https:/$()/web.invalid
+// Native TestFlight beta connects directly to the hosted API. No website is required.
+BRAIN_API_ORIGIN = https:/$()/brain-battle-api.onrender.com
+// Compatibility origin for parsing legacy links only; never opened or fetched by the app.
+BRAIN_WEB_ORIGIN = $(BRAIN_API_ORIGIN)

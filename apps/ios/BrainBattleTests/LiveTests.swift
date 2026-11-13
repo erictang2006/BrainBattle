@@ -5,6 +5,9 @@ import XCTest
 final class LiveTests: XCTestCase {
   func testRoomCodeAndNativeLinks() {
     XCTAssertEqual(LiveRoomCode.parse(" abc234 \n"), "ABC234")
+    XCTAssertEqual(LiveRoomCode.parse(LiveRoomCode.shareText("ABC234")), "ABC234")
+    XCTAssertFalse(LiveRoomCode.shareText("ABC234").contains("http"))
+    XCTAssertNil(LiveRoomCode.parse("Brain Battle live room\nRoom code: ABC234\nRoom code: ABC234"))
     XCTAssertEqual(LiveRoomCode.parse("brainbattle://room/ABC234"), "ABC234")
     for invalid in [
       "AAAAA", "ABC230", "https://evil.example/ABC234", "brainbattle://room/ABC234?token=secret",

@@ -2,7 +2,9 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { io } from 'socket.io-client';
-const base = 'http://127.0.0.1:4000';
+const base = new URL(process.env.BRAIN_TEST_API ?? 'http://127.0.0.1:4000').origin;
+if (!base.startsWith('https://') && base !== 'http://127.0.0.1:4000')
+  throw new Error('Use an HTTPS API origin or the local test API.');
 const sockets = new Set<ReturnType<typeof io>>();
 async function guest() {
   const session = await fetch(`${base}/api/native/session`, { method: 'POST' });
@@ -10,19 +12,24 @@ async function guest() {
   if (!token) throw new Error('Native session unavailable');
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
-async function fixture(party: boolean) {
+async function fixture(party: boolean, existingCode?: string) {
   const headers = await guest(),
     target = party ? 8 : 2;
-  const created = await fetch(`${base}/api/live/rooms`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ mode: party ? 'party' : 'duel', capacity: target }),
-  });
-  if (!created.ok) throw new Error('Could not create fixture');
-  const room = (await created.json()) as { code: string };
+  let room: { code: string };
+  if (existingCode) {
+    room = { code: existingCode };
+  } else {
+    const created = await fetch(`${base}/api/live/rooms`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ mode: party ? 'party' : 'duel', capacity: target }),
+    });
+    if (!created.ok) throw new Error('Could not create fixture');
+    room = (await created.json()) as { code: string };
+  }
   for (let i = 0; i < target - 1; i++) {
     const credential = i ? await guest() : headers;
-    if (i) {
+    if (i || existingCode) {
       const joined = await fetch(`${base}/api/live/rooms/${room.code}/join`, {
         method: 'POST',
         headers: credential,
@@ -45,6 +52,7 @@ async function fixture(party: boolean) {
     const submitted = new Set<number>();
     socket.on('room:state', async (state) => {
       if (
+        !existingCode &&
         !i &&
         state.status === 'lobby' &&
         state.players.length === target &&
@@ -91,7 +99,10 @@ async function fixture(party: boolean) {
 const server = createServer(async (req, res) => {
   try {
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(await fixture(req.url === '/party')));
+    const join = /^\/join\/([A-HJ-NP-Z2-9]{6})\/(duel|party)$/.exec(req.url ?? '');
+    res.end(
+      JSON.stringify(await fixture(join ? join[2] === 'party' : req.url === '/party', join?.[1])),
+    );
   } catch {
     res.statusCode = 500;
     res.end('{"error":"Fixture unavailable"}');

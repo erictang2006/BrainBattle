@@ -8,7 +8,7 @@ New matches use [Counting Boxes v2](COUNTING_BOXES_V2.md): sparse stationary 5×
 
 ## Distribute to friends
 
-Follow the [TestFlight setup guide](../../TESTFLIGHT.md) for production hosting, guest authentication, Release URLs, Apple signing, beta review and inviting friends on their iPhones.
+Follow the [native-only TestFlight guide](../../TESTFLIGHT.md) and [readiness report](NATIVE_BETA_READINESS.md). Release connects directly to `https://brain-battle-api.onrender.com`; live room codes and async challenge codes work without a Next.js deployment. The web app remains optional and preserved.
 
 ## Reuse and architecture
 
@@ -55,8 +55,8 @@ The cube surface uses native Core Animation `CATransformLayer` containers with s
 
 2. Open `apps/ios/BrainBattle.xcodeproj` in Xcode. Select the **BrainBattle** shared scheme and an iPhone Simulator. Build and run.
 3. Enter a guest name. Choose **Challenge a friend** or **Solo practice**. Both clients use server-provided versioned timing: v2 progresses through 3/6, 2.5/6, and 2/5-second observation/answer windows. Saved v1 matches remain at 8/12 seconds.
-4. Share the challenge from the toolbar or results card using the native iOS share sheet. The shared URL is the original backend invitation URL, so a recipient can play in either client.
-5. To accept another player's challenge before public universal links are configured, use **Have a challenge link?** on the home screen and paste it. `brainbattle://invite/<48-character-token>` links are also handled. A separate web private window provides a second guest for local testing.
+4. Share the challenge from the toolbar or results card using the native iOS share sheet. Native sharing sends the secure invitation token as a challenge code plus in-app instructions; it never opens the legacy website URL.
+5. To accept another player's challenge before public universal links are configured, use **Have a challenge code?** on the home screen and paste the code or native message. `brainbattle://invite/<48-character-token>` links are also handled. A separate web private window provides a second guest for local testing.
 
 Debug builds default to API `http://localhost:4000` and web `http://localhost:3000`. Development server settings are available from the profile sheet and the connection-error screen. Each API origin has its own Keychain credential and navigation preferences.
 
@@ -76,10 +76,10 @@ The script generates a conventional project and shared scheme with app, unit-tes
 2. In the app target's **Signing & Capabilities**, select your Apple development team and choose an available bundle identifier. The checked-in identifier is a development default, not a registered App Store app.
 3. On the Mac, set `HOST=0.0.0.0` in the existing root `.env` and restart Fastify. Allow local connections through the Mac firewall. Keep the phone and Mac on the same trusted Wi-Fi network.
 4. In the Debug app's development settings, enter `http://<Mac-LAN-IP>:4000` as API origin. `localhost` on a physical iPhone refers to the phone.
-5. Set the backend `WEB_ORIGIN` to the reachable web origin (for example `http://<Mac-LAN-IP>:3000`) so generated invitations work on other devices. Use that same web origin in the native settings. If also testing web on other devices, run Next.js with its hostname bound to `0.0.0.0`, and visit the configured origin.
+5. Native room/challenge codes require only the API. If also testing the optional web app, set `WEB_ORIGIN` to its reachable origin, use that web origin in Debug settings for legacy links, and bind Next.js to `0.0.0.0` for other devices.
 6. Allow the app's local-network permission when prompted. Build and run using the iPhone destination in Xcode.
 
-The app uses `NSAllowsLocalNetworking` for development connections; it does not globally disable App Transport Security. Release configuration accepts only HTTPS origins and has no editable development-server screen. For remote testing or TestFlight, deploy the existing API and web application to reachable HTTPS origins.
+The app uses `NSAllowsLocalNetworking` for development connections; it does not globally disable App Transport Security. Release configuration accepts only HTTPS origins and has no editable development-server screen. For remote testing or TestFlight, use the hosted HTTPS API. A web deployment is optional; native codes do not depend on it.
 
 ## Native authentication contract
 
@@ -128,9 +128,9 @@ Build artifacts, test results, and screenshots belong in the ignored `apps/ios/b
 
 ## Manual configuration before distribution
 
-- Replace `Configuration/Release.xcconfig` HTTPS origins (`api.invalid`, `web.invalid`) with real deployments. Configure backend production PostgreSQL, Supabase and session secrets as described in the root README.
+- Release is configured for `https://brain-battle-api.onrender.com`. Keep production PostgreSQL, Supabase and session secrets on the server. A Next.js deployment is not required for this native beta.
 - Select your development team, register the bundle identifier, provision devices, create the App Store Connect application, and configure release signing. Physical-device execution requires these steps and has not been assumed from an unsigned compile.
-- Public HTTPS invitations currently open the preserved web app unless universal links are configured. The app already handles the incoming activity; add your real `applinks` domain entitlement and host a matching `apple-app-site-association` file with your team/bundle identifier. Do not ship a made-up domain or team ID. Paste-to-open and the custom scheme work without that association.
+- The native beta shares codes, so no website or universal links are required. For an optional future web deployment, legacy HTTPS invitations open that web app unless universal links are configured. The app already handles the incoming activity; add your real `applinks` domain entitlement and host a matching `apple-app-site-association` file with your team/bundle identifier. Do not ship a made-up domain or team ID. Paste-to-open and the custom scheme work without that association.
 - Review product privacy disclosures for stored guest names, identifiers and gameplay data, provide privacy/support URLs, and complete App Store metadata, age rating, export compliance and screenshots. The included required-reason manifest declares app-local preferences and timer uptime; it is not a completed App Store privacy questionnaire.
 - Supabase-backed native refresh and external PostgreSQL need verification against a configured deployment. The local integration tests use the existing persistent-development auth path and PGlite.
 

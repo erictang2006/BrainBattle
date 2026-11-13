@@ -2,19 +2,31 @@ import XCTest
 
 @testable import BrainBattle
 
-/// Creates fresh guests and rooms only. Requires the existing local API; never opens its database.
+/// Creates fresh guests and rooms only. Debug uses the local API; Release verifies the configured beta API.
 @MainActor final class LiveIntegrationTests: XCTestCase {
   func testTwoNativeSocketIOGuestsReconnectAndFinalizeSameRound() async throws {
-    let url = URL(string: "http://127.0.0.1:4000")!
+    #if DEBUG
+      let url = URL(string: "http://127.0.0.1:4000")!
+    #else
+      let url = AppConfiguration.current.apiURL
+      XCTAssertEqual(url.scheme, "https")
+      XCTAssertFalse(url.host?.hasSuffix(".invalid") ?? true)
+    #endif
     let storeA = MemoryCredentials()
     let storeB = MemoryCredentials()
     let a = APIClient(baseURL: url, credentials: storeA)
     let b = APIClient(baseURL: url, credentials: storeB)
     let profileA: PlayerProfile
     do { profileA = try await a.session() } catch {
-      throw XCTSkip(
-        "Start the local API for live Socket.IO integration: \(error.localizedDescription)")
+      #if DEBUG
+        throw XCTSkip(
+          "Start the local API for live Socket.IO integration: \(error.localizedDescription)")
+      #else
+        throw error
+      #endif
     }
+    let restored = try await a.session()
+    XCTAssertEqual(restored.id, profileA.id)
     let profileB = try await b.session()
     XCTAssertNotEqual(profileA.id, profileB.id)
     let room = try await a.createLiveRoom(roundCount: 1)

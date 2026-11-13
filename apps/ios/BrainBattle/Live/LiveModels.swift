@@ -76,10 +76,17 @@ struct LiveAck: Decodable, Sendable {
   let status: Int?
 }
 enum LiveRoomCode {
+  static func shareText(_ code: String) -> String {
+    "Brain Battle live room\nRoom code: \(code)\nOpen Brain Battle → Play Live → Join Room. Enter this code, mark Ready, and wait for the host to start."
+  }
   static func parse(_ input: String) -> String? {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
     let value: String
-    if let url = URL(string: trimmed), url.scheme == "brainbattle", url.host == "room",
+    if trimmed.hasPrefix("Brain Battle live room\n") {
+      let codes = trimmed.split(separator: "\n").filter { $0.hasPrefix("Room code: ") }
+      guard codes.count == 1 else { return nil }
+      value = String(codes[0].dropFirst("Room code: ".count)).uppercased()
+    } else if let url = URL(string: trimmed), url.scheme == "brainbattle", url.host == "room",
       url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
       url.path.split(separator: "/").count == 1
     {

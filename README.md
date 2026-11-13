@@ -4,7 +4,7 @@ A playable Counting Boxes vertical slice: a guest creates a five-round challenge
 
 The native iOS client now lives in [`apps/ios`](apps/ios/README.md). It uses SwiftUI, native Core Animation 3D graphics, URLSession, and Keychain with the same Fastify game service. The existing web application remains available and interoperable with iOS challenges.
 
-To let friends install and play on their iPhones, follow the [TestFlight setup guide](TESTFLIGHT.md): hosting, Supabase, Release URLs, signing, uploads and invitations.
+To let friends install and play on their iPhones, follow the [native-only TestFlight guide](TESTFLIGHT.md): the hosted API, native codes, Release configuration, signing and uploads. No website deployment is required for the iOS beta.
 
 For a detailed implementation outline, architecture, API/database reference, teammate setup, validation history, and remaining work, see [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
 

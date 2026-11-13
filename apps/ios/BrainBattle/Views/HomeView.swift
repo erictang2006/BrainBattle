@@ -145,7 +145,7 @@ struct HomeView: View {
   }
   private var challengeAction: some View {
     BattleActionCard(
-      title: "Challenge a Friend", subtitle: "Set the score. Send a link.", icon: "link",
+      title: "Challenge a Friend", subtitle: "Set the score. Send a code.", icon: "link",
       color: BattleTheme.peach, busy: app.busy, action: createChallenge
     )
     .accessibilityIdentifier("createChallenge")
@@ -163,7 +163,7 @@ struct HomeView: View {
     } label: {
       HStack(spacing: 8) {
         Image(systemName: "envelope.open")
-        Text("Have a challenge link?")
+        Text("Have a challenge code?")
         Image(systemName: "arrow.up.right").font(.caption)
       }.font(.system(.subheadline, design: .rounded, weight: .semibold))
         .frame(maxWidth: .infinity, minHeight: 44)
@@ -290,7 +290,7 @@ struct HomeView: View {
       VStack(alignment: .leading, spacing: 16) {
         Image(systemName: "person.2").font(.system(size: 36)).padding(.bottom, 4)
         Text("Good friends. Great rivals.").font(.system(.title2, design: .rounded, weight: .bold))
-        Text("Friend lists are on the way. For now, send a challenge link to someone you know.")
+        Text("Friend lists are on the way. For now, send a challenge code to someone you know.")
           .font(.subheadline).foregroundStyle(BattleTheme.muted)
         Button(action: createChallenge) { Text("Challenge a Friend") }
           .buttonStyle(BattleButtonStyle()).disabled(app.busy)

@@ -61,6 +61,35 @@ final class RulesPresentationTests: XCTestCase {
       XCTAssertNil(InvitationLink.token(from: invalid, webOrigin: origin), invalid)
     }
   }
+  func testNativeChallengeCodesAndSharedMessagesNeedNoWebsite() throws {
+    let origin = URL(string: "https://brain-battle-api.onrender.com")!
+    let token = String(repeating: "a1", count: 24)
+    for input in [
+      token, " \(token.uppercased())\n", InvitationLink.shareText(token),
+      "brainbattle://invite/\(token)",
+    ] {
+      XCTAssertEqual(InvitationLink.token(from: input, webOrigin: origin), token)
+    }
+    for input in [
+      String(repeating: "a", count: 47), String(repeating: "a", count: 49),
+      String(repeating: "g", count: 48), "Challenge code: \(token)",
+      "Brain Battle challenge\nChallenge code: \(token)\nChallenge code: \(token)",
+      "https://evil.example/invite/\(token)",
+    ] {
+      XCTAssertNil(InvitationLink.token(from: input, webOrigin: origin))
+    }
+    let data = Data(
+      """
+      {"id":"native","mode":"challenge","gameId":"counting-boxes","rulesVersion":1,"you":{"id":"a","name":"A"},"opponent":null,"rounds":[],"inviteUrl":"http://localhost:3000/invite/\(token)","expiresAt":200000,"complete":false,"yoursComplete":false,"total":0,"serverNow":100000}
+      """.utf8)
+    let match = try JSONDecoder().decode(BattleMatch.self, from: data)
+    XCTAssertEqual(match.invitationToken, token)
+    let text = try XCTUnwrap(match.challengeShareText)
+    XCTAssertTrue(text.contains(token))
+    XCTAssertFalse(text.contains("http"))
+    XCTAssertFalse(text.contains("localhost"))
+    XCTAssertEqual(InvitationLink.token(from: text, webOrigin: origin), token)
+  }
   func testPublicMatchContractDecodesAbsentOpponentAndHiddenResults() throws {
     let data = Data(
       """

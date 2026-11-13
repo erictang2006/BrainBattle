@@ -32,11 +32,12 @@ struct LiveMenuView: View {
           .buttonStyle(BattleButtonStyle()).disabled(busy).accessibilityIdentifier("createLiveRoom")
         VStack(alignment: .leading, spacing: 14) {
           Text("Got a room code?").font(.headline)
-          TextField("ABC234 or invitation link", text: $code).textInputAutocapitalization(
-            .characters
-          )
-          .autocorrectionDisabled().textFieldStyle(.roundedBorder).accessibilityIdentifier(
-            "liveCode")
+          TextField("ABC234 or shared room code", text: $code, axis: .vertical)
+            .lineLimit(1...3).textInputAutocapitalization(
+              .characters
+            )
+            .autocorrectionDisabled().textFieldStyle(.roundedBorder).accessibilityIdentifier(
+              "liveCode")
           Button("Join Room") { launch(create: false) }.buttonStyle(
             BattleButtonStyle(secondary: true)
           )
@@ -90,11 +91,9 @@ struct LiveRoomView: View {
           )
           .font(.caption).foregroundStyle(model.connected ? .green : BattleTheme.muted)
           Spacer()
-          if let url = URL(string: "brainbattle://room/\(model.code)") {
-            ShareLink(item: url) {
-              Image(systemName: "square.and.arrow.up").frame(minWidth: 44, minHeight: 44)
-            }
-          }
+          ShareLink(item: LiveRoomCode.shareText(model.code)) {
+            Image(systemName: "square.and.arrow.up").frame(minWidth: 44, minHeight: 44)
+          }.accessibilityLabel("Share room code")
         }
         if let room = model.room {
           if room.status == "lobby" {

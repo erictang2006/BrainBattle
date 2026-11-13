@@ -56,7 +56,9 @@ struct MatchView: View {
               }
               if !timed {
                 if !match.yoursComplete { matchup(match) }
-                if let url = match.shareURL { shareCard(url: url, finished: match.yoursComplete) }
+                if let code = match.invitationToken {
+                  shareCard(code: code, finished: match.yoursComplete)
+                }
                 Label(
                   "One fair shot per round. Your clock stays with you.", systemImage: "lock.shield"
                 )
@@ -108,9 +110,9 @@ struct MatchView: View {
       return new.correct ? .success : .warning
     }
     .toolbar {
-      if let url = model.match?.shareURL, !timed {
+      if let text = model.match?.challengeShareText, !timed {
         ToolbarItem(placement: .topBarTrailing) {
-          ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+          ShareLink(item: text) { Image(systemName: "square.and.arrow.up") }
             .accessibilityLabel("Share challenge")
         }
       }
@@ -378,7 +380,7 @@ struct MatchView: View {
         .system(.title2, design: .rounded, weight: .bold))
     }
   }
-  private func shareCard(url: URL, finished: Bool) -> some View {
+  private func shareCard(code: String, finished: Bool) -> some View {
     VStack(alignment: .leading, spacing: 16) {
       Image(systemName: "link").font(.title2)
       Text(
@@ -389,8 +391,10 @@ struct MatchView: View {
         "Your friend gets the same five puzzles and their own clock. One challenger, 48 hours to play."
       )
       .font(.subheadline).foregroundStyle(BattleTheme.muted)
+      Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+        .accessibilityLabel("Challenge code: \(code)").accessibilityIdentifier("challengeCode")
       ShareLink(
-        item: url, subject: Text("A little Brain Battle?"),
+        item: InvitationLink.shareText(code), subject: Text("A little Brain Battle?"),
         message: Text("Five rounds of Counting Boxes. Think you can beat my score?")
       ) {
         Label("Share challenge", systemImage: "square.and.arrow.up")

@@ -11,11 +11,11 @@ struct InvitationEntryView: View {
         Text("Your invitation to\na little competition.").font(
           .system(.largeTitle, design: .rounded, weight: .heavy))
         Text(
-          "Paste the challenge link your friend sent. You’ll see who invited you before accepting."
+          "Paste the challenge code your friend sent. You’ll see who invited you before accepting."
         )
         .foregroundStyle(BattleTheme.muted)
-        TextField("https://…/invite/…", text: $link, axis: .vertical)
-          .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+        TextField("Paste challenge code", text: $link, axis: .vertical)
+          .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.asciiCapable)
           .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 16))
           .accessibilityIdentifier("invitationLink")
         if let error = app.error { ErrorNotice(message: error) }
@@ -70,7 +70,7 @@ struct InvitationView: View {
             Text(
               invitation.claimed
                 ? "Only the two existing players can reopen this challenge."
-                : "One link. One challenger. One good rivalry."
+                : "One code. One challenger. One good rivalry."
             )
             .font(.caption).foregroundStyle(BattleTheme.muted)
           }

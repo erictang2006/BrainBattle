@@ -101,7 +101,18 @@ struct BattleMatch: Codable, Hashable, Sendable, Identifiable {
             return rules.displayMs > 0 && rules.answerMs > 0 && rules.gridSize == 5
           }))
   }
-  var shareURL: URL? { inviteUrl.flatMap(URL.init(string:)) }
+  /// The existing server URL carries a secret invitation token. Extract it locally;
+  /// native sharing never opens or publishes the URL's website origin.
+  var invitationToken: String? {
+    guard let inviteUrl, let url = URL(string: inviteUrl), let scheme = url.scheme,
+      ["http", "https"].contains(scheme), url.user == nil, url.password == nil,
+      url.query == nil, url.fragment == nil,
+      url.path.split(separator: "/").count == 2,
+      url.path.split(separator: "/").first == "invite"
+    else { return nil }
+    return InvitationLink.validToken(String(url.lastPathComponent))
+  }
+  var challengeShareText: String? { invitationToken.map(InvitationLink.shareText) }
 }
 
 enum MatchMode: String, Codable, Sendable { case challenge, solo }
@@ -134,8 +145,22 @@ struct ServerClock: Sendable {
 }
 
 enum InvitationLink {
+  static func validToken(_ value: String) -> String? {
+    let token = value.lowercased()
+    return token.count == 48 && token.allSatisfy { "0123456789abcdef".contains($0) } ? token : nil
+  }
+  static func shareText(_ token: String) -> String {
+    "Brain Battle challenge\nChallenge code: \(token)\nOpen Brain Battle → Have a challenge code? Paste this code to preview and accept. Five rounds, your own clock. This invitation is for one challenger."
+  }
   static func token(from input: String, webOrigin: URL) -> String? {
-    guard let url = URL(string: input.trimmingCharacters(in: .whitespacesAndNewlines)),
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let token = validToken(trimmed) { return token }
+    if trimmed.hasPrefix("Brain Battle challenge\n") {
+      let codes = trimmed.split(separator: "\n").filter { $0.hasPrefix("Challenge code: ") }
+      guard codes.count == 1 else { return nil }
+      return validToken(String(codes[0].dropFirst("Challenge code: ".count)))
+    }
+    guard let url = URL(string: trimmed),
       url.user == nil, url.password == nil, url.query == nil, url.fragment == nil
     else { return nil }
     let parts = url.path.split(separator: "/").map(String.init)
@@ -150,9 +175,6 @@ enum InvitationLink {
     } else {
       return nil
     }
-    guard candidate.count == 48, candidate.allSatisfy({ "0123456789abcdef".contains($0) }) else {
-      return nil
-    }
-    return candidate
+    return validToken(candidate)
   }
 }

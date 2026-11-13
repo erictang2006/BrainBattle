@@ -49,6 +49,8 @@ export class LiveService {
   constructor(
     private db: Database,
     private now: () => number = Date.now,
+    private codeFactory: () => string = () =>
+      [...randomBytes(6)].map((b) => alphabet[b % alphabet.length]).join(''),
   ) {}
   async create(
     playerId: string,
@@ -56,15 +58,33 @@ export class LiveService {
   ) {
     const [profile] = await this.db.select().from(profiles).where(eq(profiles.id, playerId));
     if (!profile) throw new AppError(401, 'Restore your guest profile first.');
-    const state = this.newRoom(
+    const state = await this.insertRoom(
+      this.db,
       profile,
       input.roundCount ?? 5,
       input.mode ?? 'duel',
       input.capacity ?? (input.mode === 'party' ? 8 : 2),
     );
-    const code = state.code;
-    await this.db.insert(liveRooms).values({ id: state.id, code, state, updatedAt: this.now() });
     return this.publicState(state);
+  }
+  private async insertRoom(
+    db: Database | Transaction,
+    profile: { id: string; name: string },
+    roundCount: number,
+    mode: 'duel' | 'party',
+    capacity: number,
+  ) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const state = this.newRoom(profile, roundCount, mode, capacity);
+      // ON CONFLICT keeps a rematch transaction usable after a code collision.
+      const inserted = await db
+        .insert(liveRooms)
+        .values({ id: state.id, code: state.code, state, updatedAt: this.now() })
+        .onConflictDoNothing({ target: liveRooms.code })
+        .returning({ id: liveRooms.id });
+      if (inserted.length) return state;
+    }
+    throw new AppError(409, 'Could not reserve a room code. Please try again.');
   }
   private newRoom(
     profile: { id: string; name: string },
@@ -72,7 +92,7 @@ export class LiveService {
     mode: 'duel' | 'party' = 'duel',
     capacity = 2,
   ): State {
-    const code = [...randomBytes(6)].map((b) => alphabet[b % alphabet.length]).join('');
+    const code = this.codeFactory();
     return {
       version: 1,
       id: randomUUID(),
@@ -227,8 +247,10 @@ export class LiveService {
     if (!profile) throw new AppError(401, 'Restore your guest profile first.');
     return this.mutate(code, (state) => {
       if (state.players.some((p) => p.id === playerId)) return;
+      if (state.status === 'closed')
+        throw new AppError(410, 'This room has expired or closed. Ask for a new code.');
       if (state.status !== 'lobby')
-        throw new AppError(409, 'This room has already started or expired.');
+        throw new AppError(409, 'This room has already started. Ask for a new room code.');
       if (state.players.length >= (state.capacity ?? 2))
         throw new AppError(409, 'This room is full.');
       state.players.push({ id: profile.id, name: profile.name, ready: false, forfeited: false });
@@ -242,15 +264,13 @@ export class LiveService {
         if (state.status !== 'completed')
           throw new AppError(409, 'Finish this match before a rematch.');
         if (!state.rematchCode) {
-          const next = this.newRoom(
+          const next = await this.insertRoom(
+            tx,
             player,
             state.roundCount ?? 1,
             state.mode ?? 'duel',
             state.capacity ?? 2,
           );
-          await tx
-            .insert(liveRooms)
-            .values({ id: next.id, code: next.code, state: next, updatedAt: now });
           state.rematchCode = next.code;
         }
         return;

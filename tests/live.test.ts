@@ -470,3 +470,44 @@ it('releases stale lobby slots after grace so a disconnected host cannot block t
   expect(started.status).toBe('running');
   await expect(service.join(room.code, a)).rejects.toThrow('started');
 });
+it('retries room-code collisions atomically for creation and concurrent rematches', async () => {
+  const sequence = ['ABC234', 'ABC234', 'DEF567', 'ABC234', 'DEF567', 'GHJ789'];
+  const rooms = new LiveService(
+    database.db,
+    () => now,
+    () => sequence.shift() ?? 'KLM234',
+  );
+  const original = await rooms.create(a, { roundCount: 1 });
+  const independent = await rooms.create(c);
+  expect(original.code).toBe('ABC234');
+  expect(independent.code).toBe('DEF567');
+  await rooms.join(original.code, b);
+  for (const id of [a, b]) {
+    await rooms.watch(original.code, id, id);
+    await rooms.command(original.code, id, { action: 'ready', ready: true });
+  }
+  const start = await rooms.command(original.code, a, { action: 'start' });
+  now = start.round!.deadline;
+  await rooms.tick();
+  const results = await Promise.all(
+    [a, b].map((id) => rooms.command(original.code, id, { action: 'rematch' })),
+  );
+  expect(results.map((s) => s.rematchCode)).toEqual(['GHJ789', 'GHJ789']);
+  expect((await rooms.view(independent.code, c)).id).toBe(independent.id);
+});
+it('bounds repeated collisions and reports expired rooms without changing existing data', async () => {
+  const rooms = new LiveService(
+    database.db,
+    () => now,
+    () => 'ABC234',
+  );
+  const room = await rooms.create(a);
+  await expect(rooms.create(b)).rejects.toMatchObject({
+    statusCode: 409,
+    message: 'Could not reserve a room code. Please try again.',
+  });
+  expect((await rooms.view(room.code, a)).players.map((p) => p.id)).toEqual([a]);
+  now = room.expiresAt;
+  await expect(rooms.join(room.code, b)).rejects.toMatchObject({ statusCode: 410 });
+  expect((await rooms.view(room.code, a)).status).toBe('closed');
+});
