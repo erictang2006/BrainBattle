@@ -8,10 +8,16 @@ struct MatchView: View {
   @State private var model: MatchViewModel
   @State private var phaseNow: Double = 0
   @State private var typeAnswer = false
+  @State private var completedReveals: Set<Int> = []
   init(id: String, api: any BrainAPI) {
     _model = State(initialValue: MatchViewModel(id: id, api: api))
   }
-  private var now: Double { max(model.clock?.serverMilliseconds ?? 0, phaseNow) }
+  private var now: Double {
+    // phaseNow triggers boundary redraws; the monotonic server clock is the one
+    // source of presentation time, even after a correcting refresh.
+    let boundaryTick = phaseNow
+    return model.clock?.milliseconds() ?? boundaryTick
+  }
   private var phase: RoundState? { model.currentRound?.phase(at: now) }
   private var timed: Bool {
     model.match?.yoursComplete != true && (phase == .display || phase == .answer)
@@ -24,7 +30,7 @@ struct MatchView: View {
           VStack(alignment: .leading, spacing: 20) {
             Color.clear.frame(height: 0).id("stageTop")
             if let match = model.match {
-              if match.yoursComplete {
+              if model.showsFinalResults {
                 ResultsView(match: match, busy: model.busy) {
                   Task { if let next = await model.rematch() { app.path = [.match(next.id)] } }
                 }
@@ -36,7 +42,7 @@ struct MatchView: View {
                       .tracking(-0.6).fixedSize(horizontal: false, vertical: true)
                   }
                   Spacer(minLength: 0)
-                  if timed { RoundCountdown(round: round, clock: clock) }
+                  if phase == .display { RoundCountdown(round: round, clock: clock) }
                 }
                 RoundProgressStrip(rounds: match.rounds, current: round.number)
                 if round.state == .done {
@@ -49,7 +55,7 @@ struct MatchView: View {
                       min(255, viewport.size.height * (viewport.size.height < 620 ? 0.25 : 0.36))))
                 }
               }
-              if let error = model.error {
+              if let error = model.error, !timed {
                 ErrorNotice(message: error)
                 Button("Reconnect and refresh") { Task { await model.refresh() } }
                   .buttonStyle(BattleButtonStyle(secondary: true))
@@ -88,9 +94,16 @@ struct MatchView: View {
     )
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if timed, model.match?.yoursComplete != true,
-        let round = model.currentRound, round.remaining(at: now) > 0
+        let round = model.currentRound, round.inputAvailable(at: now) || model.error != nil
       {
-        submitButton.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8)
+        VStack(spacing: 8) {
+          if let error = model.error {
+            ErrorNotice(message: error).accessibilityIdentifier("submissionError")
+            Button("Refresh round") { Task { await model.refresh() } }
+              .font(.caption.bold()).frame(minHeight: 36).disabled(model.busy)
+          }
+          if round.inputAvailable(at: now) { submitButton }
+        }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8)
           .background(BattleTheme.paper)
       }
     }
@@ -141,7 +154,7 @@ struct MatchView: View {
         }
       } else if phase == .answer {
         hiddenStage(
-          title: round.remaining(at: now) == 0
+          title: !round.inputAvailable(at: now)
             ? "Time’s up. Setting your score…" : "Keep counting. Trust your eye.",
           icon: "eye.slash", height: stageHeight)
       } else {
@@ -158,7 +171,8 @@ struct MatchView: View {
           ruleChip(
             String(format: "%gs to look", (round.rules?.displayMs ?? 8000) / 1000), icon: "eye")
           ruleChip(
-            String(format: "%gs to answer", (round.rules?.answerMs ?? 12000) / 1000), icon: "number"
+            round.rules?.answerTimeLimit == false ? "No answer time limit" : "Enter your count",
+            icon: "number"
           )
         }
         Button {
@@ -175,8 +189,12 @@ struct MatchView: View {
         Text("Correct counts earn 1,000 points, plus up to 500 for speed.")
           .font(.caption).foregroundStyle(BattleTheme.muted)
       }
-      if phase == .display || phase == .answer, round.remaining(at: now) > 0 {
-        countControls.disabled(model.busy || scenePhase != .active)
+      if phase == .display || phase == .answer, round.inputAvailable(at: now) {
+        countControls
+          .disabled(
+            model.busy || model.submissionUncertain || phase != .answer || scenePhase != .active
+          )
+          .opacity(phase == .answer ? 1 : 0.45)
       }
     }
   }
@@ -186,7 +204,7 @@ struct MatchView: View {
       Task { await model.submit() }
     } label: {
       HStack {
-        Text(model.busy ? "Sending…" : "Done")
+        Text(model.busy ? "Sending…" : model.submissionUncertain ? "Retry submission" : "Done")
         Spacer()
         if model.busy { ProgressView().tint(.white) } else { Image(systemName: "arrow.right") }
       }.padding(.horizontal, 18)
@@ -306,46 +324,55 @@ struct MatchView: View {
   private func roundResult(_ round: GameRound) -> some View {
     let correct = round.attempt?.correct == true
     return VStack(spacing: 18) {
-      Image(
-        systemName: correct
-          ? "checkmark" : round.attempt?.timedOut == true ? "timer" : "arrow.uturn.forward"
-      )
-      .font(.system(size: 32, weight: .semibold)).frame(width: 80, height: 80)
-      .background(
-        correct ? BattleTheme.mint : BattleTheme.peach, in: RoundedRectangle(cornerRadius: 26))
-      Text(
-        correct
-          ? "Spot on!"
-          : round.attempt?.timedOut == true ? "The clock got this one." : "A tricky little stack."
-      )
-      .font(.system(.title, design: .rounded, weight: .bold)).multilineTextAlignment(.center)
-      Text(
-        correct ? "A good eye. A well-earned score." : "Reset your focus. The next round is yours."
-      )
-      .font(.subheadline).foregroundStyle(BattleTheme.muted).multilineTextAlignment(.center)
-      VStack(spacing: 4) {
-        Text("+\(round.attempt?.score ?? 0)").font(
-          .system(size: 48, weight: .heavy, design: .rounded)
-        ).monospacedDigit()
-        Eyebrow(text: "points this round")
-      }.padding(20).frame(maxWidth: .infinity)
+      if let reveal = round.reveal {
+        CubeAnswerRevealView(reveal: reveal) { completedReveals.insert(round.number) }
+          .id(round.number)
+      }
+      if round.reveal == nil || completedReveals.contains(round.number) {
+        Image(
+          systemName: correct
+            ? "checkmark" : round.attempt?.timedOut == true ? "timer" : "arrow.uturn.forward"
+        )
+        .font(.system(size: 32, weight: .semibold)).frame(width: 80, height: 80)
         .background(
-          correct ? BattleTheme.mint.opacity(0.65) : BattleTheme.peach.opacity(0.65),
-          in: RoundedRectangle(cornerRadius: 22))
-      if let opponent = round.opponent {
-        Text("Your friend: \(opponent.score) points").font(.footnote).foregroundStyle(
-          BattleTheme.muted)
-      } else if model.match?.mode == .challenge {
-        Label("Your friend’s result is still under wraps.", systemImage: "lock")
-          .font(.footnote).foregroundStyle(BattleTheme.muted)
+          correct ? BattleTheme.mint : BattleTheme.peach, in: RoundedRectangle(cornerRadius: 26))
+        Text(
+          correct
+            ? "Spot on!"
+            : round.attempt?.timedOut == true ? "The clock got this one." : "A tricky little stack."
+        )
+        .font(.system(.title, design: .rounded, weight: .bold)).multilineTextAlignment(.center)
+        Text(
+          correct
+            ? "A good eye. A well-earned score." : "Reset your focus. The next round is yours."
+        )
+        .font(.subheadline).foregroundStyle(BattleTheme.muted).multilineTextAlignment(.center)
+        VStack(spacing: 4) {
+          Text("+\(round.attempt?.score ?? 0)").font(
+            .system(size: 48, weight: .heavy, design: .rounded)
+          ).monospacedDigit()
+          Eyebrow(text: "points this round")
+        }.padding(20).frame(maxWidth: .infinity)
+          .background(
+            correct ? BattleTheme.mint.opacity(0.65) : BattleTheme.peach.opacity(0.65),
+            in: RoundedRectangle(cornerRadius: 22))
+        if let opponent = round.opponent {
+          Text("Your friend: \(opponent.score) points").font(.footnote).foregroundStyle(
+            BattleTheme.muted)
+        } else if model.match?.mode == .challenge {
+          Label("Your friend’s result is still under wraps.", systemImage: "lock")
+            .font(.footnote).foregroundStyle(BattleTheme.muted)
+        }
+        Button {
+          model.nextRound()
+        } label: {
+          Label(
+            round.number == model.match?.rounds.count ? "View results" : "Next round",
+            systemImage: "arrow.right")
+        }
+        .buttonStyle(BattleButtonStyle()).disabled(now < (round.feedbackUntil ?? 0))
+        .accessibilityIdentifier("nextRound")
       }
-      Button {
-        model.nextRound()
-      } label: {
-        Label("Next round", systemImage: "arrow.right")
-      }
-      .buttonStyle(BattleButtonStyle()).disabled(now < (round.feedbackUntil ?? 0))
-      .accessibilityIdentifier("nextRound")
     }.padding(.vertical, 14).frame(maxWidth: .infinity)
   }
   private func matchup(_ match: BattleMatch) -> some View {

@@ -37,8 +37,15 @@ struct RoundRules: Codable, Hashable, Sendable {
   let difficulty: String
   let displayMs: Double
   let answerMs: Double
+  var answerTimeLimit: Bool? = nil
   let feedbackMs: Double
   let gridSize: Int?
+}
+
+struct AnswerReveal: Codable, Hashable, Sendable {
+  let puzzle: CubePuzzle
+  let correctAnswer: Int
+  let submittedAnswer: Int?
 }
 
 struct GameRound: Codable, Hashable, Sendable, Identifiable {
@@ -52,6 +59,7 @@ struct GameRound: Codable, Hashable, Sendable, Identifiable {
   let finalized: Bool
   var rules: RoundRules? = nil
   var feedbackUntil: Double? = nil
+  var reveal: AnswerReveal? = nil
   var id: Int { number }
 
   func phase(at milliseconds: Double) -> RoundState {
@@ -64,6 +72,12 @@ struct GameRound: Codable, Hashable, Sendable, Identifiable {
     return max(0, Int(ceil(((end ?? milliseconds) - milliseconds) / 1000)))
   }
 
+  func inputAvailable(at milliseconds: Double) -> Bool {
+    let current = phase(at: milliseconds)
+    guard current == .display || current == .answer else { return false }
+    if current == .answer && rules?.answerTimeLimit == false { return true }
+    return remaining(at: milliseconds) > 0
+  }
   /// Server rule metadata controls presentation; stored deadlines remain authoritative.
   func timeProgress(at milliseconds: Double) -> Double {
     let phase = phase(at: milliseconds)
@@ -95,10 +109,11 @@ struct BattleMatch: Codable, Hashable, Sendable, Identifiable {
   var supported: Bool {
     gameId == "counting-boxes"
       && (rulesVersion == 1
-        || (rulesVersion == 2
+        || ((rulesVersion == 2 || rulesVersion == 3)
           && rounds.allSatisfy {
             guard let rules = $0.rules else { return false }
             return rules.displayMs > 0 && rules.answerMs > 0 && rules.gridSize == 5
+              && (rulesVersion != 3 || rules.answerTimeLimit == false)
           }))
   }
   /// The existing server URL carries a secret invitation token. Extract it locally;

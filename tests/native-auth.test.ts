@@ -170,7 +170,13 @@ it('plays a native/web challenge with the same puzzles, scores, deadlines and re
       expect(result.statusCode).toBe(200);
       expect(duplicate.json()).toEqual(result.json());
       expect(result.json<MatchView>().rounds[number - 1].attempt?.correct).toBe(true);
-      expect(JSON.stringify(result.json())).not.toMatch(/seed|correctAnswer/);
+      expect(JSON.stringify(result.json())).not.toMatch(/"seed"/);
+      expect(
+        result
+          .json<MatchView>()
+          .rounds.filter((r) => r.state !== 'done')
+          .every((r) => r.reveal === undefined),
+      ).toBe(true);
       now += start.rounds[number - 1].rules!.feedbackMs;
     }
   };

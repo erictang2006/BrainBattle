@@ -2,6 +2,75 @@ import XCTest
 
 /// Explicit Release-only smoke against the hosted beta. No public website is accessed.
 @MainActor final class NativeBetaUITests: XCTestCase {
+  /// Uses an isolated, in-memory local API on port 4012; never the hosted beta.
+  func testLocalDoneRevealAndFiveRoundResults() async throws {
+    #if !DEBUG
+      throw XCTSkip("Run this local regression with configuration Debug.")
+    #else
+      let app = XCUIApplication()
+      app.launchArguments = [
+        "-debug.apiOrigin", "http://127.0.0.1:4012",
+        "-debug.webOrigin", "http://127.0.0.1:4012",
+      ]
+      app.launch()
+      if app.textFields["onboardingName"].waitForExistence(timeout: 3) {
+        app.textFields["onboardingName"].tap()
+        app.textFields["onboardingName"].typeText("Reveal Tester")
+        app.buttons["onboardingContinue"].tap()
+      }
+      try home(app)
+      app.buttons["tab.games"].tap()
+      try require(app.buttons["soloPractice"].waitForExistence(timeout: 10))
+      app.buttons["soloPractice"].tap()
+      for number in 1...5 {
+        let start = app.buttons["startRound"]
+        try require(start.waitForExistence(timeout: 15))
+        reveal(start, app: app)
+        start.tap()
+        let done = app.buttons["submitAnswer"]
+        try require(done.waitForExistence(timeout: 10))
+        // Input remains locked until the server's viewing window ends.
+        for _ in 0..<80 {
+          if done.isEnabled { break }
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        try require(done.isEnabled)
+        app.buttons["incrementCount"].tap()
+        app.buttons["Type Answer"].tap()
+        app.buttons["digit.4"].tap()
+        app.buttons["Quick Count"].tap()
+        XCTAssertEqual(app.staticTexts["answerCount"].label, "Cube count: 14")
+        done.tap()
+        let skip = app.buttons["skipReveal"]
+        if number == 1 {
+          // Let the first reveal play through to exercise the full animation.
+          try require(app.staticTexts["correctAnswer"].waitForExistence(timeout: 10))
+          app.terminate()
+          app.launch()
+          try require(app.buttons["nextRound"].waitForExistence(timeout: 15))
+        } else {
+          // A three-cube reveal may finish before XCTest's idle wait returns.
+          if skip.exists { reveal(skip, app: app) }
+          if skip.exists { skip.tap() }
+          try require(app.staticTexts["correctAnswer"].waitForExistence(timeout: 10))
+        }
+        let next = app.buttons["nextRound"]
+        try require(next.waitForExistence(timeout: 10))
+        reveal(next, app: app)
+        for _ in 0..<20 {
+          if next.isEnabled { break }
+          try await Task.sleep(for: .milliseconds(100))
+        }
+        try require(next.isEnabled)
+        next.tap()
+      }
+      try require(app.staticTexts["resultTitle"].waitForExistence(timeout: 15))
+      let screenshot = XCTAttachment(screenshot: app.screenshot())
+      screenshot.name = "Five-round submission and reveal results"
+      screenshot.lifetime = .keepAlways
+      add(screenshot)
+    #endif
+  }
   func testHostedReleaseGuestRedeemsAsyncCodeAndSharesNativeCodes() async throws {
     #if DEBUG
       throw XCTSkip("Run this hosted beta UI check with configuration Release.")

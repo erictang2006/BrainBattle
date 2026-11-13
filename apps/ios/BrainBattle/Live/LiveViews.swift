@@ -78,6 +78,8 @@ struct LiveRoomView: View {
   @Environment(\.scenePhase) private var scenePhase
   @State private var model: LiveRoomModel
   @State private var confirmLeave = false
+  @State private var completedReveals: Set<Int> = []
+  @State private var showFinalResults = false
   init(code: String, playerID: String, apiURL: URL) {
     _model = State(initialValue: LiveRoomModel(code: code, playerID: playerID, apiURL: apiURL))
   }
@@ -99,26 +101,57 @@ struct LiveRoomView: View {
           if room.status == "lobby" {
             lobby(room)
           } else if let round = room.round {
-            if room.status == "completed" {
+            if room.status == "completed", round.reveal == nil || showFinalResults {
               results(room, round: round)
             } else if round.results != nil {
               VStack(alignment: .leading, spacing: 16) {
                 Text("Round \(round.number) complete").font(
                   .system(.title, design: .rounded, weight: .bold))
-                ForEach(round.results ?? []) { result in
-                  HStack {
-                    Text(room.players.first { $0.id == result.playerId }?.name ?? "Player")
-                    Spacer()
-                    Text("\(result.score)").bold()
-                    if room.mode == "party" {
-                      Text("+\(result.points ?? 0) pts").font(.caption.bold())
-                    }
-                    if round.winners?.contains(result.playerId) == true {
-                      Image(systemName: "crown.fill")
+                if let reveal = round.reveal {
+                  let revealNow = model.clock?.milliseconds() ?? room.serverNow
+                  CubeAnswerRevealView(
+                    reveal: AnswerReveal(
+                      puzzle: reveal.puzzle, correctAnswer: reveal.correctAnswer,
+                      submittedAnswer: round.results?.first { $0.playerId == model.playerID }?
+                        .submittedAnswer),
+                    animationDurationLimit: min(
+                      3,
+                      max(
+                        0,
+                        ((room.nextAt ?? (revealNow + 3100)) - revealNow) / 1000 - 0.1)),
+                    missingAnswerText: "No submitted answer is available for this round."
+                  ) { completedReveals.insert(round.number) }
+                  .id(round.number)
+                }
+                if round.reveal == nil || completedReveals.contains(round.number) {
+                  if let mine = round.results?.first(where: { $0.playerId == model.playerID }) {
+                    Text(
+                      mine.correct
+                        ? "Spot on!" : mine.timedOut ? "Time’s up." : "A tricky little stack."
+                    )
+                    .font(.title2.bold())
+                    Text("+\(mine.score) points").font(.headline)
+                  }
+                  ForEach(round.results ?? []) { result in
+                    HStack {
+                      Text(room.players.first { $0.id == result.playerId }?.name ?? "Player")
+                      Spacer()
+                      Text("\(result.score)").bold()
+                      if room.mode == "party" {
+                        Text("+\(result.points ?? 0) pts").font(.caption.bold())
+                      }
+                      if round.winners?.contains(result.playerId) == true {
+                        Image(systemName: "crown.fill")
+                      }
                     }
                   }
+                  if room.status != "completed" {
+                    Text("Next round shortly…").foregroundStyle(BattleTheme.muted)
+                  } else {
+                    Button("View results") { showFinalResults = true }
+                      .buttonStyle(BattleButtonStyle()).accessibilityIdentifier("liveViewResults")
+                  }
                 }
-                Text("Next round shortly…").foregroundStyle(BattleTheme.muted)
               }.padding(22).background(BattleTheme.mint, in: RoundedRectangle(cornerRadius: 24))
               standings(room)
             } else {
@@ -133,7 +166,7 @@ struct LiveRoomView: View {
         }
         if let error = model.error { ErrorNotice(message: error) }
         if let uncertainty = model.uncertainty, uncertainty > 250 {
-          Text("Your connection has high latency. The server’s original deadlines still apply.")
+          Text("Your connection has high latency. Viewing times stay synchronized with the server.")
             .font(.caption).foregroundStyle(BattleTheme.muted)
         }
         Button("Leave Room", role: .destructive) { confirmLeave = true }
@@ -156,7 +189,7 @@ struct LiveRoomView: View {
       }
     } message: {
       Text(
-        "Leaving during a round forfeits your attempt. Going offline during a match keeps the original deadline. Offline lobby members release their slot after 30 seconds."
+        "Leaving during a round forfeits your attempt. Going offline does not restart the round. Untimed rounds wait for players to return or leave. Offline lobby members release their slot after 30 seconds."
       )
     }
   }
@@ -321,10 +354,11 @@ private struct LiveGameView: View {
               ? "Get ready" : phase == "display" ? "Look closely" : "How many cubes?"
           ).font(.headline)
           Spacer()
-          let end =
-            phase == "prepare"
-            ? round.startsAt : phase == "display" ? round.displayUntil : round.deadline
-          Text("\(max(0, Int(ceil((end - now) / 1000))))s").monospacedDigit().font(.headline)
+          if phase == "prepare" || phase == "display" {
+            let end = phase == "prepare" ? round.startsAt : round.displayUntil
+            Text("\(max(0, Int(ceil((end - now) / 1000))))s")
+              .monospacedDigit().font(.headline).accessibilityIdentifier("liveCountdown")
+          }
         }
         ZStack {
           RoundedRectangle(cornerRadius: 26).fill(BattleTheme.lavender)

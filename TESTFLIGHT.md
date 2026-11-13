@@ -11,6 +11,14 @@ Your infrastructure is already configured:
 
 The next step is to sign, archive and upload the native iOS app. TestFlight distributes that app; Render keeps the multiplayer server running. Your Mac can be off while friends play.
 
+## Latest gameplay update: untimed guessing
+
+New matches now use Counting Boxes rules v3. Cube viewing is still timed, but guessing has no countdown or answer deadline. Correct answers earn 1,000 points even after a long delay; the existing speed bonus decays to zero instead of making a late answer wrong. Live rounds wait for all players to submit or leave; a disconnected player can rejoin and answer.
+
+Redeploy the existing backend before testing this behavior in the hosted app. Startup applies additive migration `0003_untimed_answers.sql`, which allows a NULL answer deadline and preserves all existing deadline values and match data. Saved v1/v2 matches retain their original rules, so create a **new** match to use untimed guessing. The existing invitation expiry is unchanged.
+
+Validation for this update was intentionally minimal: nine focused engine/untimed tests, TypeScript checks and an unsigned device-targeted Release build passed. The earlier full UI/hosted audit below predates v3 and was not repeated for this change.
+
 ## 1. What the beta uses
 
 ```mermaid
@@ -185,7 +193,7 @@ For a new iOS build, increment Build, archive again, upload and assign it to the
 
 The existing website remains available for optional local development or a future web deployment. No web files, routes or cookie contracts were removed. Native links and pasted legacy links remain compatible where configured; universal links are not needed for this beta.
 
-**Redeploy the existing Render API once to apply the final reliability fixes:** room creation and rematches now retry room-code collisions atomically, and expired rooms return a clear terminal response. No new Render service, website, environment variable, database reset or migration is required. The deployed API already supports native invitations and gameplay; the redeploy applies these additional safeguards. Uploading the iOS app alone does not update backend code.
+**Redeploy the existing Render API once to apply the final reliability fixes:** room creation and rematches now retry room-code collisions atomically, and expired rooms return a clear terminal response. No new Render service, website, environment variable or database reset is required. The newer untimed-answer update also requires migration `0003_untimed_answers.sql`, applied automatically on backend startup. The deployed API already supports native invitations and gameplay; the redeploy applies these additional safeguards. Uploading the iOS app alone does not update backend code.
 
 ## 10. Validation and remaining work
 

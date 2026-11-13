@@ -36,7 +36,7 @@ type State = {
     seed: string;
     startsAt: number;
     displayUntil: number;
-    deadline: number;
+    deadline: number | null;
     results: StoredResult[];
   };
 };
@@ -54,7 +54,12 @@ export class LiveService {
   ) {}
   async create(
     playerId: string,
-    input: { roundCount?: number; mode?: 'duel' | 'party'; capacity?: number } = {},
+    input: {
+      roundCount?: number;
+      mode?: 'duel' | 'party';
+      capacity?: number;
+      rulesVersion?: number;
+    } = {},
   ) {
     const [profile] = await this.db.select().from(profiles).where(eq(profiles.id, playerId));
     if (!profile) throw new AppError(401, 'Restore your guest profile first.');
@@ -64,6 +69,7 @@ export class LiveService {
       input.roundCount ?? 5,
       input.mode ?? 'duel',
       input.capacity ?? (input.mode === 'party' ? 8 : 2),
+      input.rulesVersion ?? RULES_VERSION,
     );
     return this.publicState(state);
   }
@@ -73,9 +79,10 @@ export class LiveService {
     roundCount: number,
     mode: 'duel' | 'party',
     capacity: number,
+    rulesVersion: number = RULES_VERSION,
   ) {
     for (let attempt = 0; attempt < 8; attempt++) {
-      const state = this.newRoom(profile, roundCount, mode, capacity);
+      const state = this.newRoom(profile, roundCount, mode, capacity, rulesVersion);
       // ON CONFLICT keeps a rematch transaction usable after a code collision.
       const inserted = await db
         .insert(liveRooms)
@@ -91,6 +98,7 @@ export class LiveService {
     roundCount: number,
     mode: 'duel' | 'party' = 'duel',
     capacity = 2,
+    rulesVersion: number = RULES_VERSION,
   ): State {
     const code = this.codeFactory();
     return {
@@ -98,7 +106,7 @@ export class LiveService {
       id: randomUUID(),
       code,
       revision: 0,
-      rulesVersion: RULES_VERSION,
+      rulesVersion,
       roundCount,
       mode,
       capacity,
@@ -117,7 +125,8 @@ export class LiveService {
       seed: randomBytes(32).toString('hex'),
       startsAt,
       displayUntil: startsAt + rules.displayMs,
-      deadline: startsAt + rules.displayMs + rules.answerMs,
+      deadline:
+        rules.answerTimeLimit === false ? null : startsAt + rules.displayMs + rules.answerMs,
       results: state.players
         .filter((p) => p.forfeited)
         .map((p) => ({
@@ -189,7 +198,7 @@ export class LiveService {
     if (state.nextAt && now >= state.nextAt)
       this.startRound(state, (state.history?.length ?? 0) + 1);
     const round = state.round;
-    if (now >= round.deadline)
+    if (round.deadline !== null && now >= round.deadline)
       for (const p of state.players) {
         if (!round.results.some((r) => r.playerId === p.id))
           round.results.push({
@@ -302,13 +311,15 @@ export class LiveService {
           throw new AppError(409, 'This is not the active round.');
         // A finalized attempt is immutable, including when retried with another UUID.
         if (round.results.some((r) => r.playerId === id)) return;
-        if (state.status !== 'running' || now >= round.deadline) return;
+        if (state.status !== 'running' || (round.deadline !== null && now >= round.deadline))
+          return;
         if (now < round.displayUntil)
           throw new AppError(409, 'Wait until the answer window opens.');
         const engine = getGame(GAME_ID, state.rulesVersion);
         const { answer } = engine.generate(round.seed, round.number ?? 1);
         round.results.push({
           playerId: id,
+          submittedAnswer: command.answer,
           submissionId: command.submissionId,
           score: engine.score(answer, command.answer, now - round.displayUntil, round.number ?? 1),
           correct: answer === command.answer,
@@ -449,6 +460,14 @@ export class LiveService {
           round.number ?? 1,
         ).puzzle;
       if (round.results.length === state.players.length) {
+        const generated = getGame(GAME_ID, state.rulesVersion).generate(
+          round.seed,
+          round.number ?? 1,
+        );
+        snapshot.round.reveal = {
+          puzzle: generated.puzzle,
+          correctAnswer: generated.answer,
+        };
         snapshot.round.results = round.results.map(({ submissionId: _, ...result }) => ({
           ...result,
           ...this.placement(state, round.results, result.playerId),

@@ -50,7 +50,7 @@ export const attempts = pgTable(
       .references(() => profiles.id),
     startedAt: bigint('started_at', { mode: 'number' }).notNull(),
     displayUntil: bigint('display_until', { mode: 'number' }).notNull(),
-    deadline: bigint('deadline', { mode: 'number' }).notNull(),
+    deadline: bigint('deadline', { mode: 'number' }),
     submittedAt: bigint('submitted_at', { mode: 'number' }),
     submissionId: uuid('submission_id'),
     answer: integer('answer'),

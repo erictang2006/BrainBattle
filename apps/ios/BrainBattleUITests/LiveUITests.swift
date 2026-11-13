@@ -4,7 +4,12 @@ import XCTest
 @MainActor final class LiveUITests: XCTestCase {
   func testNativeJoinReadyPlayAndResult() async throws { try await play(party: false) }
   func testEightPlayerPartyAndRematch() async throws { try await play(party: true) }
-  private func play(party: Bool) async throws {
+  func testLocalRevealDuel() async throws { try await play(party: false, localReveal: true) }
+  func testLocalRevealParty() async throws { try await play(party: true, localReveal: true) }
+  private func play(party: Bool, localReveal: Bool = false) async throws {
+    #if !DEBUG
+      if localReveal { throw XCTSkip("Local reveal regressions require Debug and the isolated API on 4013.") }
+    #endif
     continueAfterFailure = false
     var code = ""
     if !party {
@@ -13,8 +18,16 @@ import XCTest
       code = try XCTUnwrap(object["code"] as? String)
     }
     let app = XCUIApplication()
+    if localReveal {
+      app.launchArguments = [
+        "-debug.apiOrigin", "http://127.0.0.1:4013",
+        "-debug.webOrigin", "http://127.0.0.1:4013",
+        "-lastMatch.http://127.0.0.1:4013", "",
+        "-onboarded.http://127.0.0.1:4013", "NO",
+      ]
+    }
     app.launch()
-    if app.textFields["onboardingName"].waitForExistence(timeout: 2) {
+    if app.textFields["onboardingName"].waitForExistence(timeout: localReveal ? 10 : 2) {
       app.textFields["onboardingName"].tap()
       app.textFields["onboardingName"].typeText("Live Rival")
       app.buttons["onboardingContinue"].tap()
@@ -69,7 +82,18 @@ import XCTest
       done.tap()
       if number < 5 {
         try require(app.staticTexts["Round \(number) complete"].waitForExistence(timeout: 10))
+        if localReveal {
+          try require(app.staticTexts["revealCount"].waitForExistence(timeout: 3))
+        }
       }
+    }
+    let finalReveal = app.buttons["liveViewResults"]
+    if finalReveal.waitForExistence(timeout: 8) {
+      XCTAssertTrue(app.staticTexts["correctAnswer"].exists)
+      reveal(finalReveal, app: app)
+      finalReveal.tap()
+    } else if localReveal {
+      XCTFail("The final Counting Boxes reveal must precede results.")
     }
     try require(app.buttons["Back to Home"].waitForExistence(timeout: 12))
     let attachment = XCTAttachment(screenshot: app.screenshot())

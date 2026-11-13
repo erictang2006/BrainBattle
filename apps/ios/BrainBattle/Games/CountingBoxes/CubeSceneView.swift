@@ -6,6 +6,7 @@ struct CubeSceneView: View {
   let puzzle: CubePuzzle
   var illustration = false
   var interactive = false
+  var revealCount: Int? = nil
   @State private var yaw: Float = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -14,7 +15,7 @@ struct CubeSceneView: View {
       VStack(spacing: 0) {
         NativeCubeSurface(
           puzzle: puzzle, illustration: illustration, yaw: yaw,
-          reduceMotion: reduceMotion
+          reduceMotion: reduceMotion, revealCount: revealCount
         )
         .frame(
           width: geometry.size.width,
@@ -59,11 +60,13 @@ private struct NativeCubeSurface: UIViewRepresentable {
   let illustration: Bool
   let yaw: Float
   let reduceMotion: Bool
+  let revealCount: Int?
 
   func makeUIView(context: Context) -> CubeLayerView { CubeLayerView() }
   func updateUIView(_ view: CubeLayerView, context: Context) {
     view.configure(
-      puzzle: puzzle, illustration: illustration, yaw: CGFloat(yaw), reduceMotion: reduceMotion)
+      puzzle: puzzle, illustration: illustration, yaw: CGFloat(yaw), reduceMotion: reduceMotion,
+      revealCount: revealCount)
   }
 }
 
@@ -72,6 +75,8 @@ private final class CubeLayerView: UIView {
   private var puzzle: CubePuzzle?
   private var illustration = false
   private var yaw: CGFloat = 0
+  private var revealCount: Int?
+  private var cubeFaces: [[CALayer]] = []
   private var framing = CGRect(x: -3, y: -3, width: 6, height: 6)
 
   override init(frame: CGRect) {
@@ -86,7 +91,9 @@ private final class CubeLayerView: UIView {
   }
   required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
-  func configure(puzzle: CubePuzzle, illustration: Bool, yaw: CGFloat, reduceMotion: Bool) {
+  func configure(
+    puzzle: CubePuzzle, illustration: Bool, yaw: CGFloat, reduceMotion: Bool, revealCount: Int?
+  ) {
     let changed = self.puzzle != puzzle || self.illustration != illustration
     if changed {
       self.puzzle = puzzle
@@ -95,9 +102,12 @@ private final class CubeLayerView: UIView {
     }
     let rotated = self.yaw != yaw
     self.yaw = yaw
+    let counting = self.revealCount != revealCount
+    self.revealCount = revealCount
     CATransaction.begin()
-    CATransaction.setDisableActions(changed || reduceMotion || !rotated)
+    CATransaction.setDisableActions(changed || reduceMotion || !(rotated || counting))
     CATransaction.setAnimationDuration(0.2)
+    if changed || counting { updateReveal() }
     positionScene()
     CATransaction.commit()
   }
@@ -139,6 +149,7 @@ private final class CubeLayerView: UIView {
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
     for layer in world.sublayers ?? [] { layer.removeFromSuperlayer() }
+    cubeFaces = []
     let centerX =
       puzzle.gridSize.map { CGFloat($0 - 1) / 2 }
       ?? CGFloat(puzzle.cubes.map(\.x).max() ?? 2) / 2
@@ -228,6 +239,25 @@ private final class CubeLayerView: UIView {
         container.addSublayer(face)
       }
       world.addSublayer(container)
+      cubeFaces.append(container.sublayers ?? [])
+    }
+  }
+
+  private func updateReveal() {
+    for (index, faces) in cubeFaces.enumerated() {
+      let complete = revealCount == nil || revealCount! >= cubeFaces.count
+      let active = !complete && index == (revealCount ?? 0) - 1
+      let counted = index < (revealCount ?? 0)
+      // Fade individual faces: CATransformLayer itself does not composite opacity.
+      // Ghost faces make an interior/support cube visible while it is counted.
+      for face in faces {
+        face.opacity = complete || active ? 1 : counted ? 0.22 : 0.08
+        face.borderWidth = active ? 0.026 : 0.012
+        face.borderColor =
+          active
+          ? UIColor.white.withAlphaComponent(0.95).cgColor
+          : UIColor(red: 0.34, green: 0.25, blue: 0.48, alpha: 0.45).cgColor
+      }
     }
   }
 
@@ -239,5 +269,98 @@ private final class CubeLayerView: UIView {
     color.getRed(&r, green: &g, blue: &b, alpha: &a)
     return UIColor(
       red: min(1, r * factor), green: min(1, g * factor), blue: min(1, b * factor), alpha: 1)
+  }
+}
+
+/// Ordered render coordinates only, used exclusively with authorized finalized data.
+struct CubeRevealPlan {
+  let puzzle: CubePuzzle
+  let answer: Int
+  var interval: Double { min(0.28, 5.0 / Double(answer)) }
+  init?(_ reveal: AnswerReveal) {
+    let cubes = reveal.puzzle.cubes
+    guard reveal.correctAnswer > 0, reveal.correctAnswer == cubes.count,
+      Set(cubes).count == cubes.count
+    else { return nil }
+    // Count supporting layers first, then back-to-front in the fixed camera.
+    let ordered = cubes.sorted {
+      if $0.y != $1.y { return $0.y < $1.y }
+      if $0.x + $0.z != $1.x + $1.z { return $0.x + $0.z > $1.x + $1.z }
+      if $0.x != $1.x { return $0.x > $1.x }
+      return $0.z > $1.z
+    }
+    puzzle = CubePuzzle(cubes: ordered, gridSize: reveal.puzzle.gridSize)
+    answer = reveal.correctAnswer
+  }
+  func initialCount(reduceMotion: Bool) -> Int { reduceMotion ? answer : 0 }
+}
+
+struct CubeAnswerRevealView: View {
+  let reveal: AnswerReveal
+  var animationDurationLimit: Double = 5
+  var missingAnswerText = "No answer was submitted."
+  var finished: () -> Void = {}
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var counted = 0
+  @State private var didFinish = false
+  private var plan: CubeRevealPlan? { CubeRevealPlan(reveal) }
+
+  var body: some View {
+    VStack(spacing: 14) {
+      if let plan {
+        Text(didFinish ? "Every cube accounted for." : "Let’s count them together.")
+          .font(.system(.headline, design: .rounded, weight: .bold))
+        ZStack(alignment: .topLeading) {
+          CubeSceneView(puzzle: plan.puzzle, revealCount: counted)
+          Text("\(counted)").font(.system(size: 34, weight: .heavy, design: .rounded))
+            .monospacedDigit().padding(14).background(
+              .white.opacity(0.9), in: RoundedRectangle(cornerRadius: 18)
+            )
+            .padding(12).accessibilityIdentifier("revealCount")
+        }.frame(height: 240)
+        Text("Including the hidden and supporting cubes.")
+          .font(.caption).foregroundStyle(BattleTheme.muted)
+        if didFinish {
+          Text("Correct answer: \(reveal.correctAnswer)")
+            .font(.system(.title2, design: .rounded, weight: .bold)).accessibilityIdentifier(
+              "correctAnswer")
+          Text(reveal.submittedAnswer.map { "Your answer: \($0)" } ?? missingAnswerText)
+            .font(.subheadline).foregroundStyle(BattleTheme.muted)
+        } else {
+          Button("Skip reveal") { finish(plan) }.frame(minHeight: 44)
+            .accessibilityIdentifier("skipReveal")
+        }
+      } else {
+        Text("The answer reveal could not be loaded.").foregroundStyle(BattleTheme.muted)
+      }
+    }
+    .task {
+      guard let plan else {
+        didFinish = true
+        finished()
+        return
+      }
+      counted = plan.initialCount(reduceMotion: reduceMotion)
+      if counted == plan.answer {
+        finish(plan)
+        return
+      }
+      while counted < plan.answer && !Task.isCancelled {
+        let interval = min(plan.interval, max(0, animationDurationLimit) / Double(plan.answer))
+        do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+        guard !Task.isCancelled, !didFinish else { return }
+        counted += 1
+      }
+      if !Task.isCancelled { finish(plan) }
+    }
+    .onChange(of: reduceMotion) { _, reduced in if reduced, let plan { finish(plan) } }
+    .onChange(of: scenePhase) { _, phase in if phase != .active, let plan { finish(plan) } }
+  }
+  private func finish(_ plan: CubeRevealPlan) {
+    counted = plan.answer
+    guard !didFinish else { return }
+    didFinish = true
+    finished()
   }
 }

@@ -3,7 +3,10 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { io } from 'socket.io-client';
 const base = new URL(process.env.BRAIN_TEST_API ?? 'http://127.0.0.1:4000').origin;
-if (!base.startsWith('https://') && base !== 'http://127.0.0.1:4000')
+if (
+  !base.startsWith('https://') &&
+  !['http://127.0.0.1:4000', 'http://127.0.0.1:4012', 'http://127.0.0.1:4013'].includes(base)
+)
   throw new Error('Use an HTTPS API origin or the local test API.');
 const sockets = new Set<ReturnType<typeof io>>();
 async function guest() {

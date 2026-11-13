@@ -123,9 +123,26 @@ export const countingBoxesV2: MiniGame<Puzzle, number> = {
     return 1000 + Math.round(500 * (1 - elapsedMs / answerMs));
   },
 };
+// V3 preserves v2 geometry and viewing durations, with no answer deadline.
+// answerMs is only the speed-bonus decay window when answerTimeLimit is false.
+export const countingBoxesV3: MiniGame<Puzzle, number> = {
+  id: GAME_ID,
+  version: 3,
+  generate: countingBoxesV2.generate,
+  rules(round) {
+    return { ...countingBoxesV2Rules(round), answerTimeLimit: false };
+  },
+  score(expected, submitted, elapsedMs, round) {
+    if (round === undefined) throw new Error('Round required for v3 scoring');
+    const { answerMs } = countingBoxesV2Rules(round);
+    if (submitted !== expected || !Number.isFinite(elapsedMs) || elapsedMs < 0) return 0;
+    return 1000 + Math.round(500 * Math.max(0, 1 - elapsedMs / answerMs));
+  },
+};
 const registry = new Map<string, MiniGame<Puzzle, number>>([
   [`${GAME_ID}@1`, countingBoxes],
   [`${GAME_ID}@2`, countingBoxesV2],
+  [`${GAME_ID}@3`, countingBoxesV3],
 ]);
 export function getGame(id: string, version: number) {
   const game = registry.get(`${id}@${version}`);

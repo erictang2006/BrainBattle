@@ -73,7 +73,7 @@ export class GameService {
       }),
     );
   }
-  async create(playerId: string, mode: 'solo' | 'challenge') {
+  async create(playerId: string, mode: 'solo' | 'challenge', rulesVersion: number = RULES_VERSION) {
     const id = randomUUID();
     await this.db.transaction(async (tx) => {
       await tx.insert(matches).values({
@@ -81,7 +81,7 @@ export class GameService {
         hostId: playerId,
         mode,
         gameId: GAME_ID,
-        rulesVersion: RULES_VERSION,
+        rulesVersion,
         inviteToken: mode === 'challenge' ? randomBytes(24).toString('hex') : null,
         createdAt: this.now(),
         expiresAt: this.now() + 48 * 60 * 60 * 1000,
@@ -182,7 +182,10 @@ export class GameService {
       }
       const rules = getGame(match.gameId, match.rulesVersion).rules(number);
       const startedAt = this.now();
-      const displayUntil = Math.min(startedAt + rules.displayMs, match.expiresAt - rules.answerMs);
+      const displayUntil =
+        rules.answerTimeLimit === false
+          ? startedAt + rules.displayMs
+          : Math.min(startedAt + rules.displayMs, match.expiresAt - rules.answerMs);
       if (displayUntil <= startedAt)
         throw new AppError(410, 'There is not enough time left to start this round.');
       await tx
@@ -193,7 +196,7 @@ export class GameService {
           round: number,
           startedAt,
           displayUntil,
-          deadline: displayUntil + rules.answerMs,
+          deadline: rules.answerTimeLimit === false ? null : displayUntil + rules.answerMs,
         })
         .onConflictDoNothing();
       return this.project(tx, match, playerId);
@@ -241,8 +244,9 @@ export class GameService {
           submissionId,
           submittedAt: this.now(),
           score: game.score(expected, answer, elapsed, number),
-          correct: answer === expected && elapsed < rules.answerMs,
-          timedOut: elapsed >= rules.answerMs,
+          correct:
+            answer === expected && (rules.answerTimeLimit === false || elapsed < rules.answerMs),
+          timedOut: rules.answerTimeLimit !== false && elapsed >= rules.answerMs,
         })
         .where(
           and(
@@ -295,7 +299,7 @@ export class GameService {
         view.feedbackUntil = mine.submittedAt + rules.feedbackMs;
       if (mine) {
         view.displayUntil = mine.displayUntil;
-        view.deadline = mine.deadline;
+        if (mine.deadline !== null) view.deadline = mine.deadline;
       }
       if (state === 'display') {
         const [round] = await tx
@@ -304,7 +308,23 @@ export class GameService {
           .where(and(eq(rounds.matchId, match.id), eq(rounds.number, number)));
         view.puzzle = getGame(match.gameId, match.rulesVersion).generate(round.seed, number).puzzle;
       }
-      if (done) view.attempt = attemptView(mine!);
+      if (done) {
+        view.attempt = attemptView(mine!);
+        const [storedRound] = await tx
+          .select()
+          .from(rounds)
+          .where(and(eq(rounds.matchId, match.id), eq(rounds.number, number)));
+        const generated = getGame(match.gameId, match.rulesVersion).generate(
+          storedRound.seed,
+          number,
+        );
+        // Only this authenticated player's finalized attempt may obtain its solution.
+        view.reveal = {
+          puzzle: generated.puzzle,
+          correctAnswer: generated.answer,
+          submittedAnswer: mine!.answer ?? null,
+        };
+      }
       if (finalized && theirs) view.opponent = attemptView(theirs);
       roundViews.push(view);
     }

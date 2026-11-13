@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countingBoxes, countingBoxesV2, getGame } from '@brain/games';
+import { countingBoxes, countingBoxesV2, countingBoxesV3, getGame } from '@brain/games';
 import { ANSWER_MS } from '@brain/shared';
 import { createHash } from 'node:crypto';
 describe('Counting Boxes v1', () => {
@@ -13,7 +13,7 @@ describe('Counting Boxes v1', () => {
     expect(countingBoxes.generate('different-seed', 1)).not.toEqual(a);
     expect(countingBoxes.generate('fixture-seed', 2)).not.toEqual(a);
     expect(getGame('counting-boxes', 1)).toBe(countingBoxes);
-    expect(() => getGame('counting-boxes', 3)).toThrow('Unsupported');
+    expect(() => getGame('counting-boxes', 99)).toThrow('Unsupported');
   });
   it('produces unique supported integer cubes and an accurate count across many seeds', () => {
     for (let seed = 0; seed < 100; seed++)
@@ -109,5 +109,24 @@ describe('Counting Boxes v2', () => {
       expect(countingBoxesV2.score(4, 3, 100, round)).toBe(0);
       expect(countingBoxesV2.score(4, 4, -1, round)).toBe(0);
     }
+  });
+});
+
+describe('Counting Boxes v3 untimed answers', () => {
+  it('keeps viewing and geometry while removing the answer time limit', () => {
+    for (let round = 1; round <= 5; round++) {
+      expect(countingBoxesV3.generate('fixture-seed', round)).toEqual(
+        countingBoxesV2.generate('fixture-seed', round),
+      );
+      expect(countingBoxesV3.rules(round)).toEqual({
+        ...countingBoxesV2.rules(round),
+        answerTimeLimit: false,
+      });
+      expect(countingBoxesV3.score(4, 4, 0, round)).toBe(1500);
+      expect(countingBoxesV3.score(4, 4, 60_000, round)).toBe(1000);
+      expect(countingBoxesV3.score(4, 4, 24 * 60 * 60 * 1000, round)).toBe(1000);
+      expect(countingBoxesV3.score(4, 3, 60_000, round)).toBe(0);
+    }
+    expect(getGame('counting-boxes', 3)).toBe(countingBoxesV3);
   });
 });

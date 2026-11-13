@@ -2,6 +2,14 @@
 
 November 12, 2026. Target API: `https://brain-battle-api.onrender.com`.
 
+## Latest update: untimed answers (rules v3)
+
+This update supersedes the earlier no-schema-change statement for invitation preparation below. New matches have no answer deadline; viewing remains timed, and slow correct guesses still earn the 1,000-point base score. Live matches wait for every player to submit or voluntarily leave; disconnects do not produce automatic zero-score answers. Saved v1/v2 matches retain their original deadlines and scoring.
+
+- Redeploy the existing Render API for v3. Startup applies `0003_untimed_answers.sql` to allow NULL attempt deadlines; it does not reset data or change existing deadline values.
+- Start a new match after redeployment. Updating or reopening the client alone cannot change old matches or the deployed v2 server.
+- Minimal validation requested for this change: **9 focused tests passed**, TypeScript checks passed, and the device-targeted unsigned Release build passed. Hosted v3 gameplay, native UI automation and physical-device checks were not rerun. The full audit results below describe the preceding version.
+
 ## Changes
 
 - Release points directly to the hosted HTTPS API. Debug retains local development settings.

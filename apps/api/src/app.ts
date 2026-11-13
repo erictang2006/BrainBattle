@@ -353,7 +353,7 @@ export async function createApp(options: Options) {
   app.post('/api/matches', async (req, reply) => {
     const id = await identify(req, reply);
     const input = createMatchInput.parse(req.body);
-    return service.create(id, input.mode);
+    return service.create(id, input.mode, input.rulesVersion);
   });
   app.get<{ Params: { id: string } }>('/api/matches/:id', async (req, reply) =>
     service.view(matchIdInput.parse(req.params.id), await identify(req, reply)),

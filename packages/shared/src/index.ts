@@ -1,6 +1,6 @@
 import { z } from 'zod';
 export const GAME_ID = 'counting-boxes' as const;
-export const RULES_VERSION = 2 as const;
+export const RULES_VERSION = 3 as const;
 export const DEFAULT_ROUNDS = 5;
 // Released v1 timing. New versions resolve timing from their registered rules.
 export const DISPLAY_MS = 8000;
@@ -16,7 +16,10 @@ export const profileInput = z
   })
   .strict();
 export const createMatchInput = z
-  .object({ mode: z.enum(['challenge', 'solo']).default('challenge') })
+  .object({
+    mode: z.enum(['challenge', 'solo']).default('challenge'),
+    rulesVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(RULES_VERSION),
+  })
   .strict();
 export const attemptInput = z
   .object({ answer: z.number().int().min(0).max(100).nullable(), submissionId: z.uuid() })
@@ -30,11 +33,17 @@ export type RoundRules = {
   difficulty: 'classic' | 'easy' | 'medium' | 'hard';
   displayMs: number;
   answerMs: number;
+  answerTimeLimit?: boolean;
   feedbackMs: number;
   gridSize?: number;
 };
 export type Profile = { id: string; name: string };
 export type AttemptView = { score: number; correct: boolean; timedOut: boolean };
+export type AnswerReveal = {
+  puzzle: Puzzle;
+  correctAnswer: number;
+  submittedAnswer: number | null;
+};
 export type RoundView = {
   number: number;
   state: 'locked' | 'ready' | 'display' | 'answer' | 'done';
@@ -46,6 +55,7 @@ export type RoundView = {
   finalized: boolean;
   rules?: RoundRules;
   feedbackUntil?: number;
+  reveal?: AnswerReveal;
 };
 export type MatchView = {
   id: string;

@@ -384,23 +384,25 @@ export default function MatchPage() {
                           : 'How many cubes were there?'}
                     </h2>
                   </div>
-                  {phase !== 'ready' && (
-                    <span
-                      className={`timer ${remaining <= 3 ? 'urgent' : ''}`}
-                      role="timer"
-                      aria-label={`${remaining} seconds remaining`}
-                    >
-                      <Clock3 size={18} />
-                      {remaining.toFixed(0)}
-                      <small>s</small>
-                    </span>
-                  )}
+                  {phase !== 'ready' &&
+                    (phase === 'display' || round?.rules?.answerTimeLimit !== false) && (
+                      <span
+                        className={`timer ${remaining <= 3 ? 'urgent' : ''}`}
+                        role="timer"
+                        aria-label={`${remaining} seconds remaining`}
+                      >
+                        <Clock3 size={18} />
+                        {remaining.toFixed(0)}
+                        <small>s</small>
+                      </span>
+                    )}
                 </div>
-                {phase !== 'ready' && (
-                  <div className="timer-track">
-                    <span style={{ width: `${progress}%` }} />
-                  </div>
-                )}
+                {phase !== 'ready' &&
+                  (phase === 'display' || round?.rules?.answerTimeLimit !== false) && (
+                    <div className="timer-track">
+                      <span style={{ width: `${progress}%` }} />
+                    </div>
+                  )}
                 <Stage
                   visible={phase === 'display'}
                   puzzle={phase === 'display' ? round?.puzzle : undefined}
@@ -411,8 +413,15 @@ export default function MatchPage() {
                       You’ll have{' '}
                       <strong>{(round?.rules?.displayMs ?? DISPLAY_MS) / 1000} seconds</strong> to
                       study the stack, then{' '}
-                      <strong>{(round?.rules?.answerMs ?? ANSWER_MS) / 1000} seconds</strong> to
-                      answer. Count every cube, including the hidden ones.
+                      {round?.rules?.answerTimeLimit === false ? (
+                        'take as long as you need to answer.'
+                      ) : (
+                        <>
+                          <strong>{(round?.rules?.answerMs ?? ANSWER_MS) / 1000} seconds</strong> to
+                          answer.
+                        </>
+                      )}{' '}
+                      Count every cube, including the hidden ones.
                     </p>
                     <button
                       className="button button-dark"
@@ -425,7 +434,7 @@ export default function MatchPage() {
                     </button>
                     <small>Correct answer: 1,000 points + up to 500 for speed.</small>
                   </div>
-                ) : remaining <= 0 ? (
+                ) : remaining <= 0 && round?.rules?.answerTimeLimit !== false ? (
                   <p className="memorize-note">Time’s up. Setting your score…</p>
                 ) : (
                   <form
@@ -438,6 +447,7 @@ export default function MatchPage() {
                     <div className="count-method" role="group" aria-label="Answer method">
                       <button
                         type="button"
+                        disabled={busy || phase !== 'answer'}
                         aria-pressed={!typeAnswer}
                         onClick={() => setTypeAnswer(false)}
                       >
@@ -445,6 +455,7 @@ export default function MatchPage() {
                       </button>
                       <button
                         type="button"
+                        disabled={busy || phase !== 'answer'}
                         aria-pressed={typeAnswer}
                         onClick={() => setTypeAnswer(true)}
                       >
@@ -462,7 +473,7 @@ export default function MatchPage() {
                           max={100}
                           value={answer}
                           onChange={(e) => changeAnswer(e.target.value)}
-                          disabled={busy}
+                          disabled={busy || phase !== 'answer'}
                         />
                       </>
                     ) : (
@@ -474,7 +485,7 @@ export default function MatchPage() {
                           <button
                             type="button"
                             aria-label="Subtract one"
-                            disabled={busy || Number(answer) <= 0}
+                            disabled={busy || phase !== 'answer' || Number(answer) <= 0}
                             onClick={() => changeAnswer(String(Math.max(0, Number(answer) - 1)))}
                           >
                             −1
@@ -483,12 +494,16 @@ export default function MatchPage() {
                             type="button"
                             className="count-plus"
                             aria-label="Add one"
-                            disabled={busy || Number(answer) >= 100}
+                            disabled={busy || phase !== 'answer' || Number(answer) >= 100}
                             onClick={() => changeAnswer(String(Math.min(100, Number(answer) + 1)))}
                           >
                             +1
                           </button>
-                          <button type="button" disabled={busy} onClick={() => changeAnswer('0')}>
+                          <button
+                            type="button"
+                            disabled={busy || phase !== 'answer'}
+                            onClick={() => changeAnswer('0')}
+                          >
                             Clear
                           </button>
                         </div>

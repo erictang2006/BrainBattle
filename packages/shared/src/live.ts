@@ -8,6 +8,7 @@ export const liveCode = z
 export const createLiveInput = z
   .object({
     mode: z.enum(['duel', 'party']).default('duel'),
+    rulesVersion: z.union([z.literal(2), z.literal(3)]).default(3),
     capacity: z.number().int().min(2).max(8).optional(),
     roundCount: z.union([z.literal(1), z.literal(5)]).default(5),
     format: z.literal('counting-boxes').default('counting-boxes'),
@@ -39,6 +40,7 @@ export type LiveResult = {
   correct: boolean;
   timedOut: boolean;
   forfeited: boolean;
+  submittedAnswer?: number | null;
   placement?: number;
   points?: number;
 };
@@ -69,9 +71,10 @@ export type LiveSnapshot = {
     number: number;
     startsAt: number;
     displayUntil: number;
-    deadline: number;
+    deadline: number | null;
     rules: RoundRules;
     puzzle?: Puzzle;
+    reveal?: { puzzle: Puzzle; correctAnswer: number };
     submitted: string[];
     results?: LiveResult[];
     winners?: string[];

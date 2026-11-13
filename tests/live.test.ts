@@ -20,7 +20,7 @@ afterEach(async () => {
   await database.close();
 });
 async function start() {
-  const { code } = await service.create(a, { roundCount: 1 });
+  const { code } = await service.create(a, { rulesVersion: 2, roundCount: 1 });
   await service.join(code, b);
   await service.watch(code, a, 'a');
   await service.watch(code, b, 'b');
@@ -29,7 +29,7 @@ async function start() {
   return service.command(code, a, { action: 'start' });
 }
 it('enforces membership, capacity, host and ready checks and validates equal v2 puzzles', async () => {
-  const room = await service.create(a, { roundCount: 1 });
+  const room = await service.create(a, { rulesVersion: 2, roundCount: 1 });
   await expect(service.view(room.code, c)).rejects.toThrow('not a member');
   await expect(service.command(room.code, a, { action: 'start' })).rejects.toThrow(
     'connected and ready',
@@ -67,6 +67,8 @@ it('hides early scores, serializes concurrent duplicates and finalizes identical
   const first = await service.command(room.code, a, command);
   expect(first.round!.results).toBeUndefined();
   expect(first.round!.puzzle).toBeUndefined();
+  expect(first.round!.reveal).toBeUndefined();
+  expect(JSON.stringify(first)).not.toMatch(/correctAnswer|submittedAnswer/);
   await Promise.all([
     service.command(room.code, a, command),
     service.command(room.code, a, { ...command, answer: 0, submissionId: randomUUID() }),
@@ -75,6 +77,8 @@ it('hides early scores, serializes concurrent duplicates and finalizes identical
   const final = await service.view(room.code, a);
   expect(final.status).toBe('completed');
   expect(final.round!.results).toHaveLength(2);
+  expect(final.round!.reveal).toEqual({ puzzle: room.round!.puzzle, correctAnswer: answer });
+  expect(final.round!.results!.every((r) => r.submittedAnswer === answer)).toBe(true);
   expect([...final.round!.winners!].sort()).toEqual([a, b].sort());
   expect(final.round!.results![0].score).toBe(
     getGame('counting-boxes', 2).score(answer, answer, 100, 1),
@@ -87,11 +91,13 @@ it('preserves deadlines after disconnect and service restart, and times out miss
   service = new LiveService(database.db, () => now);
   const restored = await service.watch(room.code, a, 'new');
   expect(restored.round).toEqual(room.round);
-  now = room.round!.deadline;
+  now = room.round!.deadline!;
   await service.tick();
   const final = await service.view(room.code, b);
   expect(final.status).toBe('completed');
   expect(final.round!.results!.every((r) => r.timedOut && r.score === 0)).toBe(true);
+  expect(final.round!.reveal?.puzzle).toEqual(room.round!.puzzle);
+  expect(final.round!.reveal?.correctAnswer).toBe(room.round!.puzzle!.cubes.length);
   const late = await service.command(room.code, a, {
     action: 'submit',
     round: 1,
@@ -101,7 +107,7 @@ it('preserves deadlines after disconnect and service restart, and times out miss
   expect(late.round!.results).toEqual(final.round!.results);
 });
 it('transfers a disconnected lobby host after grace and preserves multiple connections', async () => {
-  const room = await service.create(a, { roundCount: 1 });
+  const room = await service.create(a, { rulesVersion: 2, roundCount: 1 });
   await service.join(room.code, b);
   await service.watch(room.code, a, 'a');
   await service.watch(room.code, a, 'a2');
@@ -118,10 +124,10 @@ it('transfers a disconnected lobby host after grace and preserves multiple conne
 it('voluntary forfeit loses even to a zero-scoring opponent; expired lobbies cannot start', async () => {
   const room = await start();
   await service.command(room.code, a, { action: 'leave' });
-  now = room.round!.deadline;
+  now = room.round!.deadline!;
   await service.tick();
   expect((await service.view(room.code, b)).round!.winners).toEqual([b]);
-  const lobby = await service.create(a, { roundCount: 1 });
+  const lobby = await service.create(a, { rulesVersion: 2, roundCount: 1 });
   now = lobby.expiresAt;
   expect((await service.view(lobby.code, a)).status).toBe('closed');
 });
@@ -164,7 +170,7 @@ it('authenticates native Socket.IO polling, rejects outsiders/forged events, and
       method: 'POST',
       url: '/api/live/rooms',
       headers: { authorization: `Bearer ${ga.token}` },
-      payload: { roundCount: 1 },
+      payload: { roundCount: 1, rulesVersion: 2 },
     });
     const code = created.json().code;
     await app.inject({
@@ -226,7 +232,7 @@ it('authenticates native Socket.IO polling, rejects outsiders/forged events, and
   }
 });
 it('plays five rounds with server intermissions, wins-based standings and one shared rematch', async () => {
-  const room = await service.create(a);
+  const room = await service.create(a, { rulesVersion: 2 });
   await service.join(room.code, b);
   await service.watch(room.code, a, 'a');
   await service.watch(room.code, b, 'b');
@@ -249,6 +255,9 @@ it('plays five rounds with server intermissions, wins-based standings and one sh
       submissionId: randomUUID(),
     });
     expect(state.standings.find((p) => p.playerId === a)!.roundWins).toBe(round);
+    expect(state.round!.reveal?.correctAnswer).toBe(answer);
+    const restored = await new LiveService(database.db, () => now).view(room.code, a);
+    expect(restored.round!.reveal).toEqual(state.round!.reveal);
     if (round < 5) {
       expect(state.status).toBe('running');
       expect(state.round!.results).toHaveLength(2);
@@ -287,7 +296,7 @@ it('scores five eight-player rounds with tied placements, forfeits and a shared 
   const profiles = new GameService(database.db, 'http://localhost:3000', () => now);
   const ids = [a, b, c, ...Array.from({ length: 5 }, () => randomUUID())];
   for (const id of ids.slice(3)) await profiles.profile(id);
-  const room = await service.create(a, { mode: 'party', capacity: 8 });
+  const room = await service.create(a, { rulesVersion: 2, mode: 'party', capacity: 8 });
   await service.join(room.code, b);
   await service.watch(room.code, a, a);
   await service.watch(room.code, b, b);
@@ -315,8 +324,14 @@ it('scores five eight-player rounds with tied placements, forfeits and a shared 
         answer,
         submissionId: randomUUID(),
       });
+      if (i < 6) {
+        expect(state.round!.reveal).toBeUndefined();
+        expect(JSON.stringify(state)).not.toMatch(/correctAnswer|submittedAnswer/);
+      }
     }
     expect(state.round!.results).toHaveLength(8);
+    expect(state.round!.reveal?.correctAnswer).toBe(answer);
+    expect(state.round!.reveal!.puzzle.cubes).toHaveLength(answer);
     const results = state.round!.results!;
     if (round === 1)
       expect(ids.map((id) => results.find((r) => r.playerId === id)!.points)).toEqual([
@@ -343,7 +358,12 @@ it('scores five eight-player rounds with tied placements, forfeits and a shared 
   expect(next.roundCount).toBe(5);
 });
 it('resolves concurrent final lobby slots and all-zero party ties deterministically', async () => {
-  const room = await service.create(a, { mode: 'party', capacity: 3, roundCount: 1 });
+  const room = await service.create(a, {
+    rulesVersion: 2,
+    mode: 'party',
+    capacity: 3,
+    roundCount: 1,
+  });
   const extra = randomUUID();
   await new GameService(database.db, 'http://localhost:3000').profile(extra);
   const joins = await Promise.allSettled([b, c, extra].map((id) => service.join(room.code, id)));
@@ -354,7 +374,7 @@ it('resolves concurrent final lobby slots and all-zero party ties deterministica
     await service.command(room.code, player.id, { action: 'ready', ready: true });
   }
   const start = await service.command(room.code, a, { action: 'start' });
-  now = start.round!.deadline;
+  now = start.round!.deadline!;
   await service.tick();
   const final = await service.view(room.code, a);
   expect(final.standings.every((s) => s.points === 2 && s.rank === 1)).toBe(true);
@@ -382,7 +402,7 @@ it('supports eight independently authenticated Socket.IO guests without exposing
       method: 'POST',
       url: '/api/live/rooms',
       headers: { authorization: `Bearer ${tokens[0]}` },
-      payload: { mode: 'party', capacity: 8, roundCount: 1 },
+      payload: { mode: 'party', capacity: 8, roundCount: 1, rulesVersion: 2 },
     });
     const code = created.json().code;
     for (let i = 0; i < 8; i++) {
@@ -454,7 +474,7 @@ it('supports eight independently authenticated Socket.IO guests without exposing
 it('releases stale lobby slots after grace so a disconnected host cannot block the party', async () => {
   const extra = randomUUID();
   await new GameService(database.db, 'http://localhost:3000').profile(extra);
-  const room = await service.create(a, { mode: 'party', capacity: 4 });
+  const room = await service.create(a, { rulesVersion: 2, mode: 'party', capacity: 4 });
   for (const id of [a, b, c, extra]) {
     if (id !== a) await service.join(room.code, id);
     await service.watch(room.code, id, id);
@@ -477,7 +497,7 @@ it('retries room-code collisions atomically for creation and concurrent rematche
     () => now,
     () => sequence.shift() ?? 'KLM234',
   );
-  const original = await rooms.create(a, { roundCount: 1 });
+  const original = await rooms.create(a, { rulesVersion: 2, roundCount: 1 });
   const independent = await rooms.create(c);
   expect(original.code).toBe('ABC234');
   expect(independent.code).toBe('DEF567');
@@ -487,7 +507,7 @@ it('retries room-code collisions atomically for creation and concurrent rematche
     await rooms.command(original.code, id, { action: 'ready', ready: true });
   }
   const start = await rooms.command(original.code, a, { action: 'start' });
-  now = start.round!.deadline;
+  now = start.round!.deadline!;
   await rooms.tick();
   const results = await Promise.all(
     [a, b].map((id) => rooms.command(original.code, id, { action: 'rematch' })),
@@ -501,7 +521,7 @@ it('bounds repeated collisions and reports expired rooms without changing existi
     () => now,
     () => 'ABC234',
   );
-  const room = await rooms.create(a);
+  const room = await rooms.create(a, { rulesVersion: 2 });
   await expect(rooms.create(b)).rejects.toMatchObject({
     statusCode: 409,
     message: 'Could not reserve a room code. Please try again.',

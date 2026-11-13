@@ -49,7 +49,7 @@ it('retains profile, puzzle and original deadlines across a database restart and
     expect(resumed.inviteUrl).toBe(original.inviteUrl);
     expect(resumed.rounds[0]).toEqual(original.rounds[0]);
     const journal = await database.db.execute(sql`SELECT version FROM brain_migrations`);
-    expect(journal.rows).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(journal.rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
   } finally {
     await database.close();
     await rm(directory, { recursive: true, force: true });
@@ -85,7 +85,7 @@ it('upgrades a v1 database additively without replacing existing profiles', asyn
     expect(profile.rows).toEqual([{ name: 'Original Player' }]);
     expect(
       (await upgraded.db.execute(sql`SELECT version FROM brain_migrations ORDER BY version`)).rows,
-    ).toEqual([{ version: 1 }, { version: 2 }]);
+    ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
     expect(
       (await upgraded.db.execute(sql`SELECT count(*)::int AS total FROM live_rooms`)).rows,
     ).toEqual([{ total: 0 }]);

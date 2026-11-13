@@ -3,6 +3,22 @@ import XCTest
 @testable import BrainBattle
 
 final class LiveTests: XCTestCase {
+  func testFinalizedLiveRevealDecodesServerAnswerAndSubmittedValue() throws {
+    let data = Data(
+      #"{"number":5,"startsAt":1000,"displayUntil":3000,"deadline":null,"rules":{"difficulty":"hard","displayMs":2000,"answerMs":5000,"feedbackMs":1000,"answerTimeLimit":false,"gridSize":5},"submitted":["a"],"results":[{"playerId":"a","score":1000,"correct":true,"timedOut":false,"forfeited":false,"submittedAnswer":1}],"reveal":{"puzzle":{"cubes":[{"x":0,"y":0,"z":0}],"gridSize":5},"correctAnswer":1}}"#
+        .utf8)
+    let round = try JSONDecoder().decode(LiveRound.self, from: data)
+    XCTAssertEqual(round.phase(at: 4000), "result")
+    XCTAssertEqual(round.results?.first?.submittedAnswer, 1)
+    let reveal = try XCTUnwrap(round.reveal)
+    let plan = try XCTUnwrap(
+      CubeRevealPlan(
+        AnswerReveal(
+          puzzle: reveal.puzzle,
+          correctAnswer: reveal.correctAnswer,
+          submittedAnswer: round.results?.first?.submittedAnswer)))
+    XCTAssertEqual(plan.answer, 1)
+  }
   func testRoomCodeAndNativeLinks() {
     XCTAssertEqual(LiveRoomCode.parse(" abc234 \n"), "ABC234")
     XCTAssertEqual(LiveRoomCode.parse(LiveRoomCode.shareText("ABC234")), "ABC234")

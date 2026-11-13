@@ -16,23 +16,29 @@ struct LiveResult: Decodable, Identifiable, Sendable {
   let forfeited: Bool
   let placement: Int?
   let points: Int?
+  var submittedAnswer: Int? = nil
+}
+struct LiveAnswerReveal: Decodable, Sendable {
+  let puzzle: CubePuzzle
+  let correctAnswer: Int
 }
 struct LiveRound: Decodable, Sendable {
   let number: Int
   let startsAt: Double
   let displayUntil: Double
-  let deadline: Double
+  let deadline: Double?
   let rules: RoundRules
   let puzzle: CubePuzzle?
   let submitted: [String]
   let results: [LiveResult]?
   let winners: [String]?
+  var reveal: LiveAnswerReveal? = nil
   func phase(at now: Double) -> String {
     if results != nil { return "result" }
     if now < startsAt { return "prepare" }
     if now < displayUntil { return "display" }
-    if now < deadline { return "answer" }
-    return "waiting"
+    if let deadline, now >= deadline { return "waiting" }
+    return "answer"
   }
 }
 struct LiveStanding: Decodable, Identifiable, Sendable {

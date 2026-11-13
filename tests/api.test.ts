@@ -76,11 +76,11 @@ async function submit(
 }
 const tokenOf = (m: MatchView) => m.inviteUrl!.split('/').at(-1)!;
 describe('authoritative asynchronous challenge', () => {
-  it('creates v2 by default and plays identical fast puzzles with authoritative feedback and scores', async () => {
+  it('retains v2 on request and plays identical fast puzzles with authoritative feedback and scores', async () => {
     const a = await guest(),
       b = await guest();
     const m = (
-      await request(a.cookie, 'POST', '/api/matches', { mode: 'challenge' })
+      await request(a.cookie, 'POST', '/api/matches', { mode: 'challenge', rulesVersion: 2 })
     ).json<MatchView>();
     expect(m.rulesVersion).toBe(2);
     const seen: unknown[] = [];
@@ -97,7 +97,10 @@ describe('authoritative asynchronous challenge', () => {
         expect(r.deadline! - r.displayUntil!).toBe(rules.answerMs);
         if (index === 0) seen.push(r.puzzle);
         else expect(r.puzzle).toEqual(seen[n - 1]);
-        expect(JSON.stringify(state)).not.toMatch(/seed|correctAnswer/);
+        expect(JSON.stringify(state)).not.toMatch(/"seed"/);
+        expect(
+          state.rounds.filter((r) => r.state !== 'done').every((r) => r.reveal === undefined),
+        ).toBe(true);
         const same = await start(cookie, m.id, n);
         expect(same.rounds[n - 1].deadline).toBe(r.deadline);
         expect((await submit(cookie, m.id, n, 0)).statusCode).toBe(409);
@@ -132,12 +135,14 @@ describe('authoritative asynchronous challenge', () => {
     const replay = (
       await request(a.cookie, 'POST', `/api/matches/${m.id}/rematch`)
     ).json<MatchView>();
-    expect(replay.rulesVersion).toBe(2);
+    expect(replay.rulesVersion).toBe(3);
     expect(replay.id).not.toBe(m.id);
   });
   it('v2 finalizes wrong and expired answers and preserves faster deadlines on refresh', async () => {
     const a = await guest();
-    const m = (await request(a.cookie, 'POST', '/api/matches', { mode: 'solo' })).json<MatchView>();
+    const m = (
+      await request(a.cookie, 'POST', '/api/matches', { mode: 'solo', rulesVersion: 2 })
+    ).json<MatchView>();
     const first = await start(a.cookie, m.id, 1);
     now = first.rounds[0].displayUntil!;
     expect((await submit(a.cookie, m.id, 1, 99)).json().rounds[0].attempt.correct).toBe(false);
@@ -189,7 +194,8 @@ describe('authoritative asynchronous challenge', () => {
       expect(result.total).toBe(7290);
       expect(result.opponentTotal).toBe(7290);
       expect(result.winner).toBe('draw');
-      expect(JSON.stringify(result)).not.toMatch(/seed|correctAnswer|puzzle/);
+      expect(JSON.stringify(result)).not.toMatch(/"seed"/);
+      expect(result.rounds.every((r) => r.puzzle === undefined)).toBe(true);
     }
     const rematch = (
       await request(a.cookie, 'POST', `/api/matches/${m.id}/rematch`)

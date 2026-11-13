@@ -14,10 +14,12 @@ const journal =
   'CREATE TABLE IF NOT EXISTS brain_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())';
 export async function openDatabase(options: { url?: string; directory?: string } = {}) {
   const migrations = await Promise.all(
-    ['0001_initial.sql', '0002_live_rooms.sql'].map(async (file, index) => ({
-      version: index + 1,
-      sql: await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
-    })),
+    ['0001_initial.sql', '0002_live_rooms.sql', '0003_untimed_answers.sql'].map(
+      async (file, index) => ({
+        version: index + 1,
+        sql: await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
+      }),
+    ),
   );
   if (options.url) {
     const client = postgres(options.url, { max: 10, prepare: false });
