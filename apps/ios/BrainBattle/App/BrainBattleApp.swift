@@ -42,6 +42,8 @@ struct RootView: View {
       }
       .navigationDestination(for: AppRoute.self) { route in
         switch route {
+        case .visualMemory: VisualMemoryMenuView()
+        case .memoryLiveMenu: LiveMenuView(initialFormat: "visual-memory")
         case .liveMenu: LiveMenuView()
         case .liveRoom(let code): LiveRoomView(code: code, playerID: app.profile?.id ?? "", apiURL: app.configuration.apiURL).id(code)
         case .match(let id): MatchView(id: id, api: app.api).id(id)

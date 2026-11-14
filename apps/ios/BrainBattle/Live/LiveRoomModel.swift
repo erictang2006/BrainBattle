@@ -12,6 +12,8 @@ import Observation
   var clock: ServerClock?
   var uncertainty: Double?
   var count = 0 { didSet { saveDraft() } }
+  var memoryPending: Set<String> = []
+  var memoryPlayer: MemoryPlayer? { room?.memory?.players.first { $0.playerId == playerID } }
   private var submissionID = UUID()
   private let socket = LiveSocket()
   private var handshake: Task<Void, Never>?
@@ -121,6 +123,38 @@ import Observation
     handshake?.cancel()
     socket.close()
     connection = "Offline"
+  }
+  func memoryTilePending(_ tile: Int) -> Bool {
+    guard let p = memoryPlayer else { return false }
+    return memoryPending.contains("\(p.turnID).\(tile)")
+  }
+  func memorySelection(tile: Int? = nil) async {
+    guard connected, let p = memoryPlayer, let clock,
+      p.phase(at: clock.milliseconds()) == "recall",
+      room?.memory?.endsAt.map({ clock.milliseconds() < $0 }) ?? true
+    else { return }
+    if let tile, !p.canSelect(tile, at: clock.milliseconds()) { return }
+    let key = "\(p.turnID).\(tile ?? -1)"
+    guard memoryPending.insert(key).inserted else { return }
+    defer { memoryPending.remove(key) }
+    struct Envelope: Encodable {
+      let code: String
+      let command: MemoryCommand
+    }
+    do {
+      let ack = try await socket.ask(
+        "room:command",
+        Envelope(
+          code: code,
+          command: MemoryCommand(
+            action: tile == nil ? "memory-retry" : "memory-tap",
+            level: p.level, attempt: p.attempt, tile: tile)))
+      if let state = ack.state { reconcile(state) }
+      error = nil
+    } catch {
+      self.error = error.localizedDescription
+      if let problem = error as? APIError, problem.status == 401 { socket.close() }
+    }
   }
   func command(action: String, ready: Bool? = nil) async -> Bool {
     guard !busy, connected else { return false }

@@ -5,6 +5,7 @@ protocol BrainAPI: Sendable {
   func rename(_ name: String) async throws -> PlayerProfile
   func recentMatches() async throws -> [RecentMatch]
   func createMatch(mode: MatchMode) async throws -> BattleMatch
+  func createMatch(mode: MatchMode, roundCount: Int) async throws -> BattleMatch
   func match(id: String) async throws -> BattleMatch
   func startRound(matchID: String, number: Int) async throws -> BattleMatch
   func submit(matchID: String, number: Int, answer: Int, submissionID: UUID) async throws
@@ -12,6 +13,15 @@ protocol BrainAPI: Sendable {
   func invitation(token: String) async throws -> Invitation
   func claim(token: String) async throws -> BattleMatch
   func rematch(id: String) async throws -> BattleMatch
+}
+
+extension BrainAPI {
+  func createMatch(mode: MatchMode, roundCount: Int) async throws -> BattleMatch {
+    guard roundCount == 5 else {
+      throw APIError(status: 400, message: "Ten rounds are unavailable with this connection.")
+    }
+    return try await createMatch(mode: mode)
+  }
 }
 
 struct APIError: LocalizedError, Sendable {
@@ -95,7 +105,15 @@ actor APIClient: BrainAPI {
   }
   func recentMatches() async throws -> [RecentMatch] { try await request("matches") }
   func createMatch(mode: MatchMode) async throws -> BattleMatch {
-    try await request("matches", method: "POST", body: encode(["mode": mode.rawValue]))
+    try await createMatch(mode: mode, roundCount: 5)
+  }
+  func createMatch(mode: MatchMode, roundCount: Int) async throws -> BattleMatch {
+    struct Body: Encodable {
+      let mode: String
+      let roundCount: Int
+    }
+    return try await request(
+      "matches", method: "POST", body: encode(Body(mode: mode.rawValue, roundCount: roundCount)))
   }
   func match(id: String) async throws -> BattleMatch { try await request("matches/\(id)") }
   func startRound(matchID: String, number: Int) async throws -> BattleMatch {
@@ -125,18 +143,24 @@ actor APIClient: BrainAPI {
 
 // Live HTTP bootstrapping reuses the existing authenticated URLSession and Keychain.
 extension APIClient {
-  func createLiveRoom(roundCount: Int = 5, mode: String = "duel", capacity: Int = 2) async throws
+  func createLiveRoom(roundCount: Int = 5, mode: String = "duel", capacity: Int = 2,
+    format: String = "counting-boxes") async throws
     -> LiveSnapshot
   {
     struct Body: Encodable {
       let roundCount: Int
       let mode: String
       let capacity: Int
+      let format: String
     }
     return try await request(
       "live/rooms", method: "POST",
-      body: encode(Body(roundCount: roundCount, mode: mode, capacity: capacity)))
+      body: encode(Body(roundCount: roundCount, mode: mode, capacity: capacity, format: format)))
   }
+  func createMemorySolo() async throws -> LiveSnapshot {
+    try await request("visual-memory/solo", method: "POST", body: encode([String: String]()))
+  }
+  func memoryHistory() async throws -> MemoryHistory { try await request("visual-memory/history") }
   func joinLiveRoom(code: String) async throws -> LiveSnapshot {
     guard let code = LiveRoomCode.parse(code) else {
       throw APIError(status: 400, message: "Enter a six-character room code.")

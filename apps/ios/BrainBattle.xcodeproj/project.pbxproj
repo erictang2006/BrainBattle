@@ -40,6 +40,11 @@
 		EB1C266EDC58E87007B09BDE /* BrainBattle/App/BrainBattleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A8B31AC4DD045CF56E5BCA /* BrainBattle/App/BrainBattleApp.swift */; };
 		F897B3F6B8B08C2CF5C0DD05 /* BrainBattle/Views/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D8811B99A8A183E593A3C4 /* BrainBattle/Views/SettingsView.swift */; };
 		FDCC0B7A0AA5F695079F1650 /* BrainBattleTests/LiveIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E101DEFE9C57F3E41F1DD957 /* BrainBattleTests/LiveIntegrationTests.swift */; };
+		080056CC18A29ADCB8867D32 /* BrainBattle/Games/VisualMemory/VisualMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0C8C105EE72D1189541D23 /* BrainBattle/Games/VisualMemory/VisualMemoryModels.swift */; };
+		49280D28BB02A22BEFFA0CBA /* BrainBattle/Games/VisualMemory/VisualMemoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0542BCB058930D6ECB5A588 /* BrainBattle/Games/VisualMemory/VisualMemoryViews.swift */; };
+		EB4E9EA0CB05FBA1A69D32B5 /* BrainBattleTests/VisualMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5DFEAC6E952E1A4C3613A7 /* BrainBattleTests/VisualMemoryTests.swift */; };
+		E94F63E1F5757646228679DC /* BrainBattleTests/VisualMemoryIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71679D815CB51386D21DC1C /* BrainBattleTests/VisualMemoryIntegrationTests.swift */; };
+		B0536FE07EEF983FD20C233C /* BrainBattleUITests/VisualMemoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA8C79F30311D37C5EFDF45 /* BrainBattleUITests/VisualMemoryUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -99,6 +104,11 @@
 		FA3863EB0C683D19452F80F7 /* BrainBattle/Live/LiveViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattle/Live/LiveViews.swift; sourceTree = SOURCE_ROOT; };
 		FB4922F4F903725B4DAEA6B7 /* BrainBattleUITests/CountingBoxesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattleUITests/CountingBoxesUITests.swift; sourceTree = SOURCE_ROOT; };
 		FBAD664805CA6E312E4626FA /* BrainBattle/Games/CountingBoxes/CubeSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattle/Games/CountingBoxes/CubeSceneView.swift; sourceTree = SOURCE_ROOT; };
+		ED0C8C105EE72D1189541D23 /* BrainBattle/Games/VisualMemory/VisualMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattle/Games/VisualMemory/VisualMemoryModels.swift; sourceTree = SOURCE_ROOT; };
+		D0542BCB058930D6ECB5A588 /* BrainBattle/Games/VisualMemory/VisualMemoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattle/Games/VisualMemory/VisualMemoryViews.swift; sourceTree = SOURCE_ROOT; };
+		9D5DFEAC6E952E1A4C3613A7 /* BrainBattleTests/VisualMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattleTests/VisualMemoryTests.swift; sourceTree = SOURCE_ROOT; };
+		E71679D815CB51386D21DC1C /* BrainBattleTests/VisualMemoryIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattleTests/VisualMemoryIntegrationTests.swift; sourceTree = SOURCE_ROOT; };
+		CFA8C79F30311D37C5EFDF45 /* BrainBattleUITests/VisualMemoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainBattleUITests/VisualMemoryUITests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -129,6 +139,8 @@
 		29CF592AFF25CCA9E7F4650F /* BrainBattle */ = {
 			isa = PBXGroup;
 			children = (
+				D0542BCB058930D6ECB5A588 /* BrainBattle/Games/VisualMemory/VisualMemoryViews.swift */,
+				ED0C8C105EE72D1189541D23 /* BrainBattle/Games/VisualMemory/VisualMemoryModels.swift */,
 				17289F77B5E1198426BA05D7 /* BrainBattle/App/AppConfiguration.swift */,
 				25A8B31AC4DD045CF56E5BCA /* BrainBattle/App/BrainBattleApp.swift */,
 				6A327F072F1F3516461322A7 /* BrainBattle/Design/GameplayComponents.swift */,
@@ -170,6 +182,7 @@
 		7082CBAC7A58C4F4B1922CD1 /* BrainBattleUITests */ = {
 			isa = PBXGroup;
 			children = (
+				CFA8C79F30311D37C5EFDF45 /* BrainBattleUITests/VisualMemoryUITests.swift */,
 				FB4922F4F903725B4DAEA6B7 /* BrainBattleUITests/CountingBoxesUITests.swift */,
 				1B4EB89798A8397F849B2782 /* BrainBattleUITests/LiveUITests.swift */,
 				E7E10AB8EB5CD2531E415980 /* BrainBattleUITests/NativeBetaUITests.swift */,
@@ -191,6 +204,8 @@
 		FA4358E1F157A321CEF4126A /* BrainBattleTests */ = {
 			isa = PBXGroup;
 			children = (
+				E71679D815CB51386D21DC1C /* BrainBattleTests/VisualMemoryIntegrationTests.swift */,
+				9D5DFEAC6E952E1A4C3613A7 /* BrainBattleTests/VisualMemoryTests.swift */,
 				3B17FFF98A06C810A1B3C7C2 /* BrainBattleTests/HomeHistoryTests.swift */,
 				E101DEFE9C57F3E41F1DD957 /* BrainBattleTests/LiveIntegrationTests.swift */,
 				54B9F78A3063399CC13E66BF /* BrainBattleTests/LiveTests.swift */,
@@ -326,6 +341,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E94F63E1F5757646228679DC /* BrainBattleTests/VisualMemoryIntegrationTests.swift in Sources */,
+				EB4E9EA0CB05FBA1A69D32B5 /* BrainBattleTests/VisualMemoryTests.swift in Sources */,
 				49DF22805E833AA8FE736E19 /* BrainBattleTests/HomeHistoryTests.swift in Sources */,
 				FDCC0B7A0AA5F695079F1650 /* BrainBattleTests/LiveIntegrationTests.swift in Sources */,
 				CC93D5FCF44F817253ACB789 /* BrainBattleTests/LiveTests.swift in Sources */,
@@ -339,6 +356,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B0536FE07EEF983FD20C233C /* BrainBattleUITests/VisualMemoryUITests.swift in Sources */,
 				1C298DAF2E6546CA0EDBCD68 /* BrainBattleUITests/CountingBoxesUITests.swift in Sources */,
 				40E91E8525AA6D72810D6905 /* BrainBattleUITests/LiveUITests.swift in Sources */,
 				5550F874143EEABE0AC77E0E /* BrainBattleUITests/NativeBetaUITests.swift in Sources */,
@@ -349,6 +367,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				49280D28BB02A22BEFFA0CBA /* BrainBattle/Games/VisualMemory/VisualMemoryViews.swift in Sources */,
+				080056CC18A29ADCB8867D32 /* BrainBattle/Games/VisualMemory/VisualMemoryModels.swift in Sources */,
 				0B4B13AB4CF3748E7B528DDB /* BrainBattle/App/AppConfiguration.swift in Sources */,
 				EB1C266EDC58E87007B09BDE /* BrainBattle/App/BrainBattleApp.swift in Sources */,
 				B587A6A5AFC7F510004F409A /* BrainBattle/Design/GameplayComponents.swift in Sources */,
@@ -485,7 +505,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Configuration/Simulator.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = LBMM957GW9;
 				ENABLE_TESTABILITY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -542,7 +562,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Configuration/Simulator.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = LBMM957GW9;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;

@@ -56,6 +56,9 @@ struct LiveLineup: Decodable, Identifiable, Sendable {
   let rules: RoundRules
 }
 struct LiveSnapshot: Decodable, Sendable {
+  var format: String? = nil
+  var memory: MemoryGame? = nil
+  var isVisualMemory: Bool { format == "visual-memory" }
   let id: String
   let code: String
   let revision: Int

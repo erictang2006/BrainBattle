@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Puzzle, RoundRules } from './index.js';
+import { memoryTapInput, memoryRetryInput, type MemoryView } from './visual-memory.js';
 export const liveCode = z
   .string()
   .trim()
@@ -10,8 +11,8 @@ export const createLiveInput = z
     mode: z.enum(['duel', 'party']).default('duel'),
     rulesVersion: z.union([z.literal(2), z.literal(3)]).default(3),
     capacity: z.number().int().min(2).max(8).optional(),
-    roundCount: z.union([z.literal(1), z.literal(5)]).default(5),
-    format: z.literal('counting-boxes').default('counting-boxes'),
+    roundCount: z.union([z.literal(1), z.literal(5), z.literal(10)]).default(5),
+    format: z.enum(['counting-boxes', 'visual-memory']).default('counting-boxes'),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -20,6 +21,8 @@ export const createLiveInput = z
       ctx.addIssue({ code: 'custom', message: '1v1 requires 2 players; parties require 3–8.' });
   });
 export const liveCommand = z.discriminatedUnion('action', [
+  memoryTapInput,
+  memoryRetryInput,
   z.object({ action: z.literal('ready'), ready: z.boolean() }).strict(),
   z.object({ action: z.literal('start') }).strict(),
   z.object({ action: z.literal('leave') }).strict(),
@@ -27,7 +30,7 @@ export const liveCommand = z.discriminatedUnion('action', [
   z
     .object({
       action: z.literal('submit'),
-      round: z.number().int().min(1).max(5),
+      round: z.number().int().min(1).max(10),
       answer: z.number().int().min(0).max(100).nullable(),
       submissionId: z.uuid(),
     })
@@ -45,13 +48,15 @@ export type LiveResult = {
   points?: number;
 };
 export type LiveSnapshot = {
+  format?: 'counting-boxes' | 'visual-memory';
+  memory?: MemoryView;
   id: string;
   code: string;
   revision: number;
   rulesVersion: number;
   status: 'lobby' | 'running' | 'completed' | 'closed';
   hostId: string;
-  mode: 'duel' | 'party';
+  mode: 'solo' | 'duel' | 'party';
   capacity: number;
   roundCount: number;
   expiresAt: number;

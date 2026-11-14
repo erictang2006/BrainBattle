@@ -8,11 +8,21 @@ struct HomeView: View {
   @State private var showInvite = false
   @State private var showSettings = false
   @State private var lastDismissedBattleID: String?
+  @State private var roundCount = 5
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
         header
+        if tab == .home || tab == .games {
+          Picker("Rounds", selection: $roundCount) {
+            Text("5 rounds").tag(5)
+            Text("10 rounds").tag(10)
+          }.pickerStyle(.segmented).accessibilityIdentifier("matchRoundCount")
+          if roundCount == 10 {
+            Text("3 Easy · 4 Medium · 3 Hard").font(.caption).foregroundStyle(BattleTheme.muted)
+          }
+        }
         switch tab {
         case .home: socialHome
         case .games: games
@@ -263,7 +273,7 @@ struct HomeView: View {
           RivalryCubeIllustration().frame(width: 70, height: 80).accessibilityHidden(true)
         }
         Button {
-          Task { await app.create(mode: .solo) }
+          Task { await app.create(mode: .solo, roundCount: roundCount) }
         } label: {
           Label("Solo practice", systemImage: "cube")
         }.buttonStyle(BattleButtonStyle()).disabled(app.busy).accessibilityIdentifier(
@@ -271,6 +281,15 @@ struct HomeView: View {
         Button(action: createChallenge) { Text("Challenge a Friend") }
           .buttonStyle(BattleButtonStyle(secondary: true)).disabled(app.busy)
       }.padding(22).background(BattleTheme.peach, in: RoundedRectangle(cornerRadius: 24))
+      VStack(alignment: .leading, spacing: 16) {
+        Label("Visual Memory", systemImage: "square.grid.3x3.fill")
+          .font(.system(.title2, design: .rounded, weight: .bold))
+        Text("A flash of white. A little focus. How far can you go?")
+          .font(.subheadline).foregroundStyle(BattleTheme.muted)
+        Text("Solo · Live 1v1 · Party Mode").font(.caption.bold())
+        Button("Play Visual Memory") { app.path.append(.visualMemory) }
+          .buttonStyle(BattleButtonStyle()).accessibilityIdentifier("playVisualMemory")
+      }.padding(22).background(BattleTheme.lavender, in: RoundedRectangle(cornerRadius: 24))
       ForEach([("Reaction Time", "bolt"), ("Sequence Memory", "square.grid.3x3")], id: \.0) {
         game in
         HStack(spacing: 14) {
@@ -331,6 +350,8 @@ struct HomeView: View {
       Text(subtitle).font(.subheadline).foregroundStyle(BattleTheme.muted)
     }
   }
-  private func createChallenge() { Task { await app.create(mode: .challenge) } }
+  private func createChallenge() {
+    Task { await app.create(mode: .challenge, roundCount: roundCount) }
+  }
   private func open(_ id: String) { app.path.append(.match(id)) }
 }

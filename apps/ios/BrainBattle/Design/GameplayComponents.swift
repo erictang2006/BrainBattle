@@ -4,7 +4,10 @@ struct RoundProgressStrip: View {
   let rounds: [GameRound]
   let current: Int
   var body: some View {
-    HStack(spacing: 8) {
+    LazyVGrid(
+      columns: Array(repeating: GridItem(.flexible()), count: min(5, max(1, rounds.count))),
+      spacing: 8
+    ) {
       ForEach(rounds) { round in
         VStack(spacing: 7) {
           HStack(spacing: 4) {

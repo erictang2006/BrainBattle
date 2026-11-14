@@ -70,7 +70,10 @@ private struct NativeCubeSurface: UIViewRepresentable {
   }
 }
 
-private final class CubeLayerView: UIView {
+final class CubeLayerView: UIView {
+  // Composite the ground below the entire cube scene. A floor tile's center
+  // depth must never let it paint over a cube face that overlaps it on screen.
+  private let ground = CATransformLayer()
   private let world = CATransformLayer()
   private var puzzle: CubePuzzle?
   private var illustration = false
@@ -83,6 +86,9 @@ private final class CubeLayerView: UIView {
     super.init(frame: frame)
     backgroundColor = .clear
     isOpaque = false
+    ground.name = "cube-ground"
+    world.name = "cube-world"
+    layer.addSublayer(ground)
     layer.addSublayer(world)
     isAccessibilityElement = true
     accessibilityIdentifier = "cubeScene"
@@ -107,6 +113,7 @@ private final class CubeLayerView: UIView {
     CATransaction.begin()
     CATransaction.setDisableActions(changed || reduceMotion || !(rotated || counting))
     CATransaction.setAnimationDuration(0.2)
+    if changed || rotated { updateFacing() }
     if changed || counting { updateReveal() }
     positionScene()
     CATransaction.commit()
@@ -128,6 +135,8 @@ private final class CubeLayerView: UIView {
     world.position = CGPoint(
       x: bounds.midX - framing.midX * scale, y: bounds.midY - framing.midY * scale)
     world.transform = CATransform3DScale(rotated, scale, scale, scale)
+    ground.position = world.position
+    ground.transform = world.transform
   }
 
   private func camera(at yaw: CGFloat) -> CATransform3D {
@@ -149,6 +158,7 @@ private final class CubeLayerView: UIView {
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
     for layer in world.sublayers ?? [] { layer.removeFromSuperlayer() }
+    for tile in ground.sublayers ?? [] { tile.removeFromSuperlayer() }
     cubeFaces = []
     let centerX =
       puzzle.gridSize.map { CGFloat($0 - 1) / 2 }
@@ -172,7 +182,7 @@ private final class CubeLayerView: UIView {
           tile.transform = CATransform3DRotate(
             CATransform3DMakeTranslation(
               CGFloat(x) - centerX, 0.51, CGFloat(z) - centerZ), .pi / 2, 1, 0, 0)
-          world.addSublayer(tile)
+          ground.addSublayer(tile)
         }
       }
       let transform = camera(at: 0)
@@ -240,6 +250,22 @@ private final class CubeLayerView: UIView {
       }
       world.addSublayer(container)
       cubeFaces.append(container.sublayers ?? [])
+    }
+  }
+
+  private func updateFacing() {
+    let transform = camera(at: yaw)
+    let normals: [(CGFloat, CGFloat, CGFloat)] = [
+      (0, 0, 1), (0, 0, -1), (-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0),
+    ]
+    for faces in cubeFaces {
+      for (face, normal) in zip(faces, normals) {
+        // Use outward normals rather than CALayer's default double-sided drawing.
+        // The existing screen-coordinate camera includes a reflection, so winding
+        // based backface culling alone would hide the wrong faces.
+        let depth = normal.0 * transform.m13 + normal.1 * transform.m23 + normal.2 * transform.m33
+        face.isHidden = depth <= 0
+      }
     }
   }
 

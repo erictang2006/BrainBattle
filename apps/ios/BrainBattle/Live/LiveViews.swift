@@ -4,9 +4,14 @@ struct LiveMenuView: View {
   @Environment(AppModel.self) private var app
   @State private var mode = "duel"
   @State private var capacity = 8
+  @State private var roundCount = 5
+  @State private var format: String
   @State private var code = ""
   @State private var busy = false
   @State private var error: String?
+  init(initialFormat: String = "counting-boxes") {
+    _format = State(initialValue: initialFormat)
+  }
   private var savedRoomKey: String {
     "liveRoom.\(app.configuration.apiURL.absoluteString).\(app.profile?.id ?? "")"
   }
@@ -19,15 +24,34 @@ struct LiveMenuView: View {
           Text("Party Mode").tag("party")
         }.pickerStyle(.segmented)
         if mode == "party" { Stepper("Player limit: \(capacity)", value: $capacity, in: 3...8) }
-        Text("Five rounds · Counting Boxes").font(.headline)
-        Text(
-          mode == "party"
-            ? "3–8 friends. Placement points. One winner."
-            : "Two rivals. Most round wins takes the match."
-        )
-        .font(.subheadline).foregroundStyle(BattleTheme.muted)
-        Text("Count the same cubes, on the same clock. Everyone readies up in the lobby.")
-          .foregroundStyle(BattleTheme.muted)
+        Picker("Game", selection: $format) {
+          Text("Counting Boxes").tag("counting-boxes")
+          Text("Visual Memory").tag("visual-memory")
+        }.pickerStyle(.segmented).accessibilityIdentifier("liveGameSelection")
+        if format == "visual-memory" {
+          Text("Visual Memory · 2-minute battle").font(.headline)
+          Text(
+            "Same patterns. Three hearts each. Clear levels at your own pace. Highest score wins; equal scores share a rank."
+          )
+          .font(.subheadline).foregroundStyle(BattleTheme.muted)
+        } else {
+          Text("\(roundCount) rounds · Counting Boxes").font(.headline)
+          Picker("Rounds", selection: $roundCount) {
+            Text("5 rounds").tag(5)
+            Text("10 rounds").tag(10)
+          }.pickerStyle(.segmented).accessibilityIdentifier("liveRoundCount")
+          if roundCount == 10 {
+            Text("3 Easy · 4 Medium · 3 Hard").font(.caption).foregroundStyle(BattleTheme.muted)
+          }
+          Text(
+            mode == "party"
+              ? "3–8 friends. Placement points. One winner."
+              : "Two rivals. Most round wins takes the match."
+          )
+          .font(.subheadline).foregroundStyle(BattleTheme.muted)
+          Text("Count the same cubes, on the same clock. Everyone readies up in the lobby.")
+            .foregroundStyle(BattleTheme.muted)
+        }
         Button(mode == "party" ? "Create Party Room" : "Create 1v1 Room") { launch(create: true) }
           .buttonStyle(BattleButtonStyle()).disabled(busy).accessibilityIdentifier("createLiveRoom")
         VStack(alignment: .leading, spacing: 14) {
@@ -62,7 +86,9 @@ struct LiveMenuView: View {
         _ = try await api.session()
         let state: LiveSnapshot
         if create {
-          state = try await api.createLiveRoom(mode: mode, capacity: mode == "party" ? capacity : 2)
+          state = try await api.createLiveRoom(
+            roundCount: format == "visual-memory" ? 1 : roundCount, mode: mode,
+            capacity: mode == "party" ? capacity : 2, format: format)
         } else {
           state = try await api.joinLiveRoom(code: code)
         }
@@ -86,20 +112,24 @@ struct LiveRoomView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
-        HStack {
-          Label(
-            model.connection,
-            systemImage: model.connected ? "circle.fill" : "arrow.triangle.2.circlepath"
-          )
-          .font(.caption).foregroundStyle(model.connected ? .green : BattleTheme.muted)
-          Spacer()
-          ShareLink(item: LiveRoomCode.shareText(model.code)) {
-            Image(systemName: "square.and.arrow.up").frame(minWidth: 44, minHeight: 44)
-          }.accessibilityLabel("Share room code")
+        if model.room?.mode != "solo" {
+          HStack {
+            Label(
+              model.connection,
+              systemImage: model.connected ? "circle.fill" : "arrow.triangle.2.circlepath"
+            )
+            .font(.caption).foregroundStyle(model.connected ? .green : BattleTheme.muted)
+            Spacer()
+            ShareLink(item: LiveRoomCode.shareText(model.code)) {
+              Image(systemName: "square.and.arrow.up").frame(minWidth: 44, minHeight: 44)
+            }.accessibilityLabel("Share room code")
+          }
         }
         if let room = model.room {
           if room.status == "lobby" {
             lobby(room)
+          } else if room.isVisualMemory, room.memory != nil {
+            VisualMemoryRoomContent(model: model, room: room, active: scenePhase == .active)
           } else if let round = room.round {
             if room.status == "completed", round.reveal == nil || showFinalResults {
               results(room, round: round)
@@ -160,7 +190,7 @@ struct LiveRoomView: View {
           } else {
             Text("This room has closed.").font(.title2)
           }
-          participants(room)
+          if room.mode != "solo" { participants(room) }
         } else {
           ProgressView("Restoring your room…").frame(maxWidth: .infinity, minHeight: 200)
         }
@@ -169,10 +199,21 @@ struct LiveRoomView: View {
           Text("Your connection has high latency. Viewing times stay synchronized with the server.")
             .font(.caption).foregroundStyle(BattleTheme.muted)
         }
-        Button("Leave Room", role: .destructive) { confirmLeave = true }
-          .frame(minHeight: 44).disabled(!model.connected || model.busy)
+        Button(model.room?.mode == "solo" ? "End Solo Game" : "Leave Room", role: .destructive) {
+          confirmLeave = true
+        }
+        .frame(minHeight: 44).disabled(!model.connected || model.busy)
+        .accessibilityIdentifier("leaveLiveRoom")
       }.padding(22).frame(maxWidth: 560)
-    }.frame(maxWidth: .infinity).background(BattleTheme.paper).navigationTitle("Room \(model.code)")
+    }.frame(maxWidth: .infinity).background(BattleTheme.paper)
+      .safeAreaInset(edge: .top, spacing: 0) {
+        if let room = model.room, room.isVisualMemory, room.status == "running",
+          let p = model.memoryPlayer, p.phase != "finished", let clock = model.clock
+        {
+          VisualMemoryStatusHeader(player: p, clock: clock, endsAt: room.memory?.endsAt)
+        }
+      }
+      .navigationTitle(model.room?.mode == "solo" ? "Visual Memory" : "Room \(model.code)")
       .navigationBarTitleDisplayMode(.inline)
       .task(id: scenePhase) { if scenePhase == .active { await model.run() } else { model.stop() } }
       .onDisappear { model.stop() }
@@ -189,7 +230,9 @@ struct LiveRoomView: View {
       }
     } message: {
       Text(
-        "Leaving during a round forfeits your attempt. Going offline does not restart the round. Untimed rounds wait for players to return or leave. Offline lobby members release their slot after 30 seconds."
+        model.room?.isVisualMemory == true
+          ? "Leaving ends your game and saves your progress. Live games keep the original two-minute deadline during interruptions. Return from a disconnection to resume; a missed pattern can be retried for one heart."
+          : "Leaving during a round forfeits your attempt. Going offline does not restart the round. Untimed rounds wait for players to return or leave. Offline lobby members release their slot after 30 seconds."
       )
     }
   }
@@ -199,12 +242,26 @@ struct LiveRoomView: View {
         .system(.largeTitle, design: .rounded, weight: .bold))
       Text(room.code).font(.system(size: 36, weight: .bold, design: .monospaced)).tracking(5)
         .accessibilityIdentifier("liveRoomCode")
-      Text("Counting Boxes · \(room.roundCount) rounds · Rules v\(room.rulesVersion)").font(
+      Text(
+        room.isVisualMemory
+          ? "Visual Memory · 2 minutes · 3 hearts"
+          : "Counting Boxes · \(room.roundCount) rounds · Rules v\(room.rulesVersion)"
+      ).font(
         .subheadline)
       Text(
         "\(room.players.count)/\(room.capacity) players · \(room.mode == "party" ? "At least three players" : "Two players") required. Everyone ready, then the host starts."
       )
       .foregroundStyle(BattleTheme.muted)
+      if room.isVisualMemory {
+        Text(
+          "Memorize the white tiles, then tap them. Every 3 wrong tiles cost a heart and retry the level. Clear a level to advance. Everyone gets the same pattern at each level and retry, on their own pace."
+        )
+        .font(.subheadline)
+        Text(
+          "Scoring: 1,000 per cleared level, 10 per tile in an unfinished level, −1 per mistake. A retry resets partial tile points. Scores are confirmed by the server."
+        )
+        .font(.caption).foregroundStyle(BattleTheme.muted)
+      }
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 10) {
           ForEach(room.lineup) { game in
@@ -308,6 +365,10 @@ struct LiveRoomView: View {
   private func playerStatus(_ player: LivePlayer, room: LiveSnapshot) -> String {
     if player.forfeited { return "Forfeited" }
     if room.status == "completed" { return "Finished" }
+    if let p = room.memory?.players.first(where: { $0.playerId == player.id }) {
+      if p.phase == "finished" { return "Finished · Level \(p.level) · \(p.score) points" }
+      return "\(player.connected ? "Playing" : "Offline") · Level \(p.level) · \(p.lives) hearts"
+    }
     if !player.connected { return "Offline · Rejoin anytime" }
     if room.status == "running" {
       return room.round?.submitted.contains(player.id) == true ? "Answer locked" : "In the round"

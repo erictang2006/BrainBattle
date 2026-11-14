@@ -51,8 +51,10 @@ struct InvitationView: View {
           invitation.map { "\($0.hostName) thinks you’re up for it." } ?? "A little brain battle?"
         )
         .font(.system(size: 36, weight: .heavy, design: .rounded)).tracking(-1.5)
-        Text("Five rounds. The same puzzles. Your own clock. Think you can take the top spot?")
-          .foregroundStyle(BattleTheme.muted).lineSpacing(4)
+        Text(
+          "\(invitation?.rounds ?? 5) rounds. The same puzzles. Your own clock. Think you can take the top spot?"
+        )
+        .foregroundStyle(BattleTheme.muted).lineSpacing(4)
         Label("1 vs. 1 · Counting Boxes", systemImage: "cube").font(.subheadline.weight(.semibold))
         if let error { ErrorNotice(message: error) }
         if let invitation {

@@ -1,8 +1,54 @@
+import UIKit
 import XCTest
 
 @testable import BrainBattle
 
 final class RulesPresentationTests: XCTestCase {
+  @MainActor func testCubeGroundNeverSharesDepthSortingAndBackFacesStayHidden() async throws {
+    let puzzle = CubePuzzle(
+      cubes: [
+        Cube(x: 0, y: 0, z: 0), Cube(x: 1, y: 0, z: 0), Cube(x: 1, y: 1, z: 0),
+        Cube(x: 3, y: 0, z: 3), Cube(x: 3, y: 1, z: 3), Cube(x: 3, y: 2, z: 3),
+        Cube(x: 0, y: 0, z: 4),
+      ], gridSize: 5)
+    let controller = UIViewController()
+    controller.view.backgroundColor = UIColor(red: 0.97, green: 0.95, blue: 0.99, alpha: 1)
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 320))
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    let scene = CubeLayerView(frame: controller.view.bounds.insetBy(dx: 12, dy: 12))
+    controller.view.addSubview(scene)
+    for yaw: CGFloat in [0, -0.55, 0.55] {
+      scene.configure(
+        puzzle: puzzle, illustration: false, yaw: yaw, reduceMotion: true, revealCount: nil)
+      scene.layoutIfNeeded()
+      let layers = try XCTUnwrap(scene.layer.sublayers)
+      XCTAssertEqual(layers.map(\.name), ["cube-ground", "cube-world"])
+      XCTAssertEqual(layers[0].sublayers?.count, 25)
+      XCTAssertEqual(layers[1].sublayers?.count, puzzle.cubes.count)
+      XCTAssertTrue(CATransform3DEqualToTransform(layers[0].transform, layers[1].transform))
+      for cube in layers[1].sublayers ?? [] {
+        XCTAssertEqual(cube.sublayers?.map(\.isHidden), [true, false, false, true, false, true])
+      }
+      try await Task.sleep(for: .milliseconds(100))
+      let image = UIGraphicsImageRenderer(bounds: controller.view.bounds).image { _ in
+        controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+      }
+      let attachment = XCTAttachment(image: image)
+      attachment.name = "Cube depth and ground yaw \(yaw)"
+      attachment.lifetime = .keepAlways
+      add(attachment)
+    }
+    // Reveal fading must not bring rear walls back into the normal camera view.
+    scene.configure(puzzle: puzzle, illustration: false, yaw: 0, reduceMotion: true, revealCount: 1)
+    for cube in scene.layer.sublayers?.last?.sublayers ?? [] {
+      XCTAssertEqual(cube.sublayers?.map(\.isHidden), [true, false, false, true, false, true])
+    }
+  }
   func testV2MetadataDecodesAndUsesShortServerWindows() throws {
     let data = Data(
       """

@@ -109,11 +109,11 @@ struct BattleMatch: Codable, Hashable, Sendable, Identifiable {
   var supported: Bool {
     gameId == "counting-boxes"
       && (rulesVersion == 1
-        || ((rulesVersion == 2 || rulesVersion == 3)
+        || ((rulesVersion == 2 || rulesVersion == 3 || rulesVersion == 4)
           && rounds.allSatisfy {
             guard let rules = $0.rules else { return false }
             return rules.displayMs > 0 && rules.answerMs > 0 && rules.gridSize == 5
-              && (rulesVersion != 3 || rules.answerTimeLimit == false)
+              && (rulesVersion < 3 || rules.answerTimeLimit == false)
           }))
   }
   /// The existing server URL carries a secret invitation token. Extract it locally;
@@ -127,7 +127,9 @@ struct BattleMatch: Codable, Hashable, Sendable, Identifiable {
     else { return nil }
     return InvitationLink.validToken(String(url.lastPathComponent))
   }
-  var challengeShareText: String? { invitationToken.map(InvitationLink.shareText) }
+  var challengeShareText: String? {
+    invitationToken.map { InvitationLink.shareText($0, roundCount: rounds.count) }
+  }
 }
 
 enum MatchMode: String, Codable, Sendable { case challenge, solo }
@@ -164,8 +166,8 @@ enum InvitationLink {
     let token = value.lowercased()
     return token.count == 48 && token.allSatisfy { "0123456789abcdef".contains($0) } ? token : nil
   }
-  static func shareText(_ token: String) -> String {
-    "Brain Battle challenge\nChallenge code: \(token)\nOpen Brain Battle → Have a challenge code? Paste this code to preview and accept. Five rounds, your own clock. This invitation is for one challenger."
+  static func shareText(_ token: String, roundCount: Int = 5) -> String {
+    "Brain Battle challenge\nChallenge code: \(token)\nOpen Brain Battle → Have a challenge code? Paste this code to preview and accept. \(roundCount) rounds, your own clock. This invitation is for one challenger."
   }
   static func token(from input: String, webOrigin: URL) -> String? {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)

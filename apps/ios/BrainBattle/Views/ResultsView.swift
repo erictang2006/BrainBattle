@@ -37,7 +37,7 @@ struct ResultsView: View {
         Text(
           match.complete
             ? "A little competition looks good on you."
-            : "Five rounds down. Your friend’s score unlocks when they finish."
+            : "\(match.rounds.count) rounds down. Your friend’s score unlocks when they finish."
         )
         .font(.subheadline).foregroundStyle(BattleTheme.muted).multilineTextAlignment(.center)
       }.padding(.top, 10)

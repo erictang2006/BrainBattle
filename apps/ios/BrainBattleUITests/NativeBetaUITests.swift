@@ -2,6 +2,39 @@ import XCTest
 
 /// Explicit Release-only smoke against the hosted beta. No public website is accessed.
 @MainActor final class NativeBetaUITests: XCTestCase {
+  func testLocalTenRoundOptions() throws {
+    #if !DEBUG
+      throw XCTSkip("Use Debug with the isolated in-memory API on 4014.")
+    #else
+      let app = XCUIApplication()
+      app.launchArguments = [
+        "-debug.apiOrigin", "http://127.0.0.1:4014",
+        "-debug.webOrigin", "http://127.0.0.1:4014",
+      ]
+      app.launch()
+      if app.textFields["onboardingName"].waitForExistence(timeout: 10) {
+        app.textFields["onboardingName"].tap()
+        app.textFields["onboardingName"].typeText("Ten Round Tester")
+        app.buttons["onboardingContinue"].tap()
+      }
+      try home(app)
+      app.segmentedControls["matchRoundCount"].buttons["10 rounds"].tap()
+      app.buttons["tab.games"].tap()
+      app.buttons["soloPractice"].tap()
+      try require(app.buttons["startRound"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.staticTexts["10"].exists)
+      app.navigationBars.buttons.firstMatch.tap()
+      try home(app)
+      reveal(app.buttons["playLive"], app: app)
+      app.buttons["playLive"].tap()
+      try require(app.buttons["createLiveRoom"].waitForExistence(timeout: 10))
+      app.segmentedControls["liveRoundCount"].buttons["10 rounds"].tap()
+      app.segmentedControls.buttons["Party Mode"].tap()
+      app.buttons["createLiveRoom"].tap()
+      try require(app.buttons["liveReady"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.staticTexts["Round 10"].exists)
+    #endif
+  }
   /// Uses an isolated, in-memory local API on port 4012; never the hosted beta.
   func testLocalDoneRevealAndFiveRoundResults() async throws {
     #if !DEBUG

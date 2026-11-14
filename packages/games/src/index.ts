@@ -1,4 +1,5 @@
 import { ANSWER_MS, DISPLAY_MS, GAME_ID, type Puzzle, type RoundRules } from '@brain/shared';
+export * from './visual-memory.js';
 
 /** Pure rules only. Seed creation and clocks belong to the authoritative server. */
 export interface MiniGame<PublicPuzzle, Answer> {
@@ -139,10 +140,26 @@ export const countingBoxesV3: MiniGame<Puzzle, number> = {
     return 1000 + Math.round(500 * Math.max(0, 1 - elapsedMs / answerMs));
   },
 };
+// Separate immutable format: 3 easy, 4 medium, 3 hard. Existing versions stay unchanged.
+function tenRoundStage(round: number) {
+  if (!Number.isInteger(round) || round < 1 || round > 10) throw new Error('Invalid round');
+  return round <= 3 ? 1 : round <= 7 ? 3 : 5;
+}
+export const countingBoxesV4: MiniGame<Puzzle, number> = {
+  id: GAME_ID,
+  version: 4,
+  rules: (round) => countingBoxesV3.rules(tenRoundStage(round)),
+  generate: (seed, round) => countingBoxesV3.generate(`${seed}:v4:${round}`, tenRoundStage(round)),
+  score(expected, submitted, elapsedMs, round) {
+    if (round === undefined) throw new Error('Round required for v4 scoring');
+    return countingBoxesV3.score(expected, submitted, elapsedMs, tenRoundStage(round));
+  },
+};
 const registry = new Map<string, MiniGame<Puzzle, number>>([
   [`${GAME_ID}@1`, countingBoxes],
   [`${GAME_ID}@2`, countingBoxesV2],
   [`${GAME_ID}@3`, countingBoxesV3],
+  [`${GAME_ID}@4`, countingBoxesV4],
 ]);
 export function getGame(id: string, version: number) {
   const game = registry.get(`${id}@${version}`);

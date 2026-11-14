@@ -83,8 +83,8 @@ import Observation
     guard draftPrefix != prefix else { return }
     draftPrefix = prefix
     let saved = UserDefaults.standard.integer(forKey: "\(prefix).selectedRound")
-    if (1...6).contains(saved) { selectedRound = saved }
-    for number in 1...5 {
+    if (1...11).contains(saved) { selectedRound = saved }
+    for number in 1...10 {
       if let data = UserDefaults.standard.data(forKey: "\(prefix).pending.\(number)"),
         let pending = try? JSONDecoder().decode(PendingAnswer.self, from: data)
       {

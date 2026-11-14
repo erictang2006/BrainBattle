@@ -24,6 +24,8 @@ The repository inspection found these components usable without rewriting them:
 | Socket.IO                 | Authenticated native live rooms and existing web notifications; async native matches use foreground HTTP polling                 |
 | `apps/web`                | Preserved. Native and web players can challenge each other using the same links and rules                               |
 
+Visual Memory is playable from Games in Solo, live 1v1, and Party Mode. It has three hearts, independent level progression, fair shared patterns, persistent results/personal bests, and native rematches. See [VISUAL_MEMORY.md](VISUAL_MEMORY.md) for rules, verification, Simulator instructions, and API deployment requirements.
+
 Native source organization:
 
 ```text

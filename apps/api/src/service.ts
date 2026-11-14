@@ -73,7 +73,14 @@ export class GameService {
       }),
     );
   }
-  async create(playerId: string, mode: 'solo' | 'challenge', rulesVersion: number = RULES_VERSION) {
+  async create(
+    playerId: string,
+    mode: 'solo' | 'challenge',
+    rulesVersion: number = RULES_VERSION,
+    roundCount: number = DEFAULT_ROUNDS,
+  ) {
+    if (![5, 10].includes(roundCount)) throw new AppError(400, 'Choose five or ten rounds.');
+    rulesVersion = roundCount === 10 ? 4 : rulesVersion;
     const id = randomUUID();
     await this.db.transaction(async (tx) => {
       await tx.insert(matches).values({
@@ -87,7 +94,7 @@ export class GameService {
         expiresAt: this.now() + 48 * 60 * 60 * 1000,
       });
       await tx.insert(rounds).values(
-        Array.from({ length: DEFAULT_ROUNDS }, (_, i) => ({
+        Array.from({ length: roundCount }, (_, i) => ({
           matchId: id,
           number: i + 1,
           seed: randomBytes(32).toString('hex'),
@@ -104,7 +111,7 @@ export class GameService {
       hostName: host.name,
       claimed: match.guestId !== null,
       expired: this.now() >= match.expiresAt,
-      rounds: DEFAULT_ROUNDS,
+      rounds: (await this.db.select().from(rounds).where(eq(rounds.matchId, match.id))).length,
     };
   }
   async claim(token: string, playerId: string) {
@@ -150,6 +157,11 @@ export class GameService {
   }
   async start(id: string, playerId: string, number: number) {
     return this.authorized(id, playerId, async (tx, match) => {
+      const [stored] = await tx
+        .select()
+        .from(rounds)
+        .where(and(eq(rounds.matchId, id), eq(rounds.number, number)));
+      if (!stored) throw new AppError(404, 'Round not found.');
       const [existing] = await tx
         .select()
         .from(attempts)
@@ -262,10 +274,16 @@ export class GameService {
   async rematch(id: string, playerId: string) {
     const old = await this.view(id, playerId);
     if (!old.yoursComplete) throw new AppError(409, 'Finish your rounds before a rematch.');
-    return this.create(playerId, old.mode);
+    return this.create(
+      playerId,
+      old.mode,
+      old.rounds.length === 10 ? 4 : RULES_VERSION,
+      old.rounds.length,
+    );
   }
   private async project(tx: Tx, match: Match, playerId: string): Promise<MatchView> {
     const all = await tx.select().from(attempts).where(eq(attempts.matchId, match.id));
+    const storedRounds = await tx.select().from(rounds).where(eq(rounds.matchId, match.id));
     const otherId = match.hostId === playerId ? match.guestId : match.hostId;
     const [you] = await tx
       .select({ id: profiles.id, name: profiles.name })
@@ -279,7 +297,7 @@ export class GameService {
       : [];
     const now = this.now();
     const roundViews: RoundView[] = [];
-    for (let number = 1; number <= DEFAULT_ROUNDS; number++) {
+    for (let number = 1; number <= storedRounds.length; number++) {
       const mine = all.find((a) => a.playerId === playerId && a.round === number);
       const theirs = all.find((a) => a.playerId === otherId && a.round === number);
       const done = mine?.submittedAt != null;

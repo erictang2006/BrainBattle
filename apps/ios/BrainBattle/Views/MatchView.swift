@@ -415,14 +415,17 @@ struct MatchView: View {
       )
       .font(.system(.title2, design: .rounded, weight: .bold))
       Text(
-        "Your friend gets the same five puzzles and their own clock. One challenger, 48 hours to play."
+        "Your friend gets the same \(model.match?.rounds.count ?? 5) puzzles and their own clock. One challenger, 48 hours to play."
       )
       .font(.subheadline).foregroundStyle(BattleTheme.muted)
       Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
         .accessibilityLabel("Challenge code: \(code)").accessibilityIdentifier("challengeCode")
       ShareLink(
-        item: InvitationLink.shareText(code), subject: Text("A little Brain Battle?"),
-        message: Text("Five rounds of Counting Boxes. Think you can beat my score?")
+        item: InvitationLink.shareText(code, roundCount: model.match?.rounds.count ?? 5),
+        subject: Text("A little Brain Battle?"),
+        message: Text(
+          "\(model.match?.rounds.count ?? 5) rounds of Counting Boxes. Think you can beat my score?"
+        )
       ) {
         Label("Share challenge", systemImage: "square.and.arrow.up")
       }.buttonStyle(BattleButtonStyle()).accessibilityIdentifier("shareChallenge")

@@ -264,7 +264,7 @@ describe('authoritative asynchronous challenge', () => {
     expect((await submit(a.cookie, m.id, 1, await answerFor(m.id, 1))).statusCode).toBe(409);
     expect(
       (await request(a.cookie, 'POST', `/api/matches/${m.id}/rounds/6/start`)).statusCode,
-    ).toBe(400);
+    ).toBe(404);
   });
   it('does not extend clocks on retries or refresh and finalizes timeouts authoritatively', async () => {
     const a = await guest();

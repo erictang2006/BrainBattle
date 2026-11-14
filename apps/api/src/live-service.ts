@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { liveRooms, profiles, type Database } from '@brain/db';
 import {
   GAME_ID,
@@ -7,15 +7,26 @@ import {
   type LiveCommand,
   type LiveSnapshot,
   type LiveResult,
+  type MemoryHistory,
 } from '@brain/shared';
 import { getGame } from '@brain/games';
 import { AppError } from './service.js';
+import {
+  advanceMemory,
+  memoryView,
+  retryMemory,
+  startMemory,
+  tapMemory,
+  type MemoryState,
+} from './visual-memory.js';
 
 type Player = { id: string; name: string; ready: boolean; forfeited: boolean };
 type StoredResult = LiveResult & { submissionId: string | null };
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type History = { number: number; results: StoredResult[] };
 type State = {
+  format?: 'counting-boxes' | 'visual-memory';
+  memory?: MemoryState;
   version: 1;
   id: string;
   code: string;
@@ -25,7 +36,7 @@ type State = {
   hostId: string;
   players: Player[];
   expiresAt: number;
-  mode?: 'duel' | 'party';
+  mode?: 'solo' | 'duel' | 'party';
   capacity?: number;
   roundCount?: number;
   history?: History[];
@@ -59,6 +70,8 @@ export class LiveService {
       mode?: 'duel' | 'party';
       capacity?: number;
       rulesVersion?: number;
+      format?: 'counting-boxes' | 'visual-memory';
+      solo?: boolean;
     } = {},
   ) {
     const [profile] = await this.db.select().from(profiles).where(eq(profiles.id, playerId));
@@ -66,23 +79,40 @@ export class LiveService {
     const state = await this.insertRoom(
       this.db,
       profile,
-      input.roundCount ?? 5,
-      input.mode ?? 'duel',
+      input.format === 'visual-memory' ? 1 : (input.roundCount ?? 5),
+      input.solo ? 'solo' : (input.mode ?? 'duel'),
       input.capacity ?? (input.mode === 'party' ? 8 : 2),
-      input.rulesVersion ?? RULES_VERSION,
+      input.format === 'visual-memory'
+        ? 1
+        : input.roundCount === 10
+          ? 4
+          : (input.rulesVersion ?? RULES_VERSION),
+      input.format ?? 'counting-boxes',
     );
-    return this.publicState(state);
+    if (input.solo) {
+      return this.mutate(
+        state.code,
+        (s) => {
+          s.memory = startMemory([playerId], this.now(), true);
+          s.status = 'running';
+        },
+        false,
+        playerId,
+      );
+    }
+    return this.forPlayer(this.publicState(state), playerId);
   }
   private async insertRoom(
     db: Database | Transaction,
     profile: { id: string; name: string },
     roundCount: number,
-    mode: 'duel' | 'party',
+    mode: 'solo' | 'duel' | 'party',
     capacity: number,
     rulesVersion: number = RULES_VERSION,
+    format: 'counting-boxes' | 'visual-memory' = 'counting-boxes',
   ) {
     for (let attempt = 0; attempt < 8; attempt++) {
-      const state = this.newRoom(profile, roundCount, mode, capacity, rulesVersion);
+      const state = this.newRoom(profile, roundCount, mode, capacity, rulesVersion, format);
       // ON CONFLICT keeps a rematch transaction usable after a code collision.
       const inserted = await db
         .insert(liveRooms)
@@ -96,13 +126,15 @@ export class LiveService {
   private newRoom(
     profile: { id: string; name: string },
     roundCount: number,
-    mode: 'duel' | 'party' = 'duel',
+    mode: 'solo' | 'duel' | 'party' = 'duel',
     capacity = 2,
     rulesVersion: number = RULES_VERSION,
+    format: 'counting-boxes' | 'visual-memory' = 'counting-boxes',
   ): State {
     const code = this.codeFactory();
     return {
       version: 1,
+      format,
       id: randomUUID(),
       code,
       revision: 0,
@@ -171,7 +203,7 @@ export class LiveService {
   private advance(state: State) {
     const now = this.now();
     if (state.status === 'lobby' && now >= state.expiresAt) state.status = 'closed';
-    if (state.status === 'lobby') {
+    if (state.status === 'lobby' && state.mode !== 'solo') {
       for (const player of state.players) {
         const key = `${state.code}:${player.id}`;
         if (this.connected(state.code, player.id)) this.offlineSince.delete(key);
@@ -193,6 +225,10 @@ export class LiveService {
         const next = state.players.find((p) => this.connected(state.code, p.id));
         if (next) state.hostId = next.id;
       }
+    }
+    if (state.status === 'running' && state.memory) {
+      if (advanceMemory(state.memory, now)) state.status = 'completed';
+      return;
     }
     if (state.status !== 'running' || !state.round) return;
     if (state.nextAt && now >= state.nextAt)
@@ -223,6 +259,7 @@ export class LiveService {
     code: string,
     operation: (state: State, tx: Transaction) => Promise<void> | void,
     quiet = false,
+    viewerId?: string,
   ) {
     let changed = false;
     const snapshot = await this.db.transaction(async (tx) => {
@@ -244,108 +281,168 @@ export class LiveService {
       return this.publicState(state);
     });
     if (!quiet || changed) this.onChanged(snapshot);
-    return snapshot;
+    return this.forPlayer(snapshot, viewerId);
   }
   async view(code: string, playerId: string) {
-    return this.mutate(code, (state) => {
-      this.member(state, playerId);
-    });
+    return this.mutate(
+      code,
+      (state) => {
+        this.member(state, playerId);
+      },
+      false,
+      playerId,
+    );
   }
   async join(code: string, playerId: string) {
     const [profile] = await this.db.select().from(profiles).where(eq(profiles.id, playerId));
     if (!profile) throw new AppError(401, 'Restore your guest profile first.');
-    return this.mutate(code, (state) => {
-      if (state.players.some((p) => p.id === playerId)) return;
-      if (state.status === 'closed')
-        throw new AppError(410, 'This room has expired or closed. Ask for a new code.');
-      if (state.status !== 'lobby')
-        throw new AppError(409, 'This room has already started. Ask for a new room code.');
-      if (state.players.length >= (state.capacity ?? 2))
-        throw new AppError(409, 'This room is full.');
-      state.players.push({ id: profile.id, name: profile.name, ready: false, forfeited: false });
-    });
+    return this.mutate(
+      code,
+      (state) => {
+        if (state.players.some((p) => p.id === playerId)) return;
+        if (state.mode === 'solo') throw new AppError(403, 'Solo games are private.');
+        if (state.status === 'closed')
+          throw new AppError(410, 'This room has expired or closed. Ask for a new code.');
+        if (state.status !== 'lobby')
+          throw new AppError(409, 'This room has already started. Ask for a new room code.');
+        if (state.players.length >= (state.capacity ?? 2))
+          throw new AppError(409, 'This room is full.');
+        state.players.push({ id: profile.id, name: profile.name, ready: false, forfeited: false });
+      },
+      false,
+      playerId,
+    );
   }
   async command(code: string, id: string, command: LiveCommand) {
-    return this.mutate(code, async (state, tx) => {
-      const player = this.member(state, id);
-      const now = this.now();
-      if (command.action === 'rematch') {
-        if (state.status !== 'completed')
-          throw new AppError(409, 'Finish this match before a rematch.');
-        if (!state.rematchCode) {
-          const next = await this.insertRoom(
-            tx,
-            player,
-            state.roundCount ?? 1,
-            state.mode ?? 'duel',
-            state.capacity ?? 2,
-          );
-          state.rematchCode = next.code;
-        }
-        return;
-      }
-      if (command.action === 'leave') {
-        if (state.status === 'lobby') {
-          state.players = state.players.filter((p) => p.id !== id);
-          if (!state.players.length) state.status = 'closed';
-          else if (state.hostId === id) state.hostId = state.players[0].id;
-        } else if (state.status === 'running') {
-          player.forfeited = true;
-          if (!state.round!.results.some((r) => r.playerId === id))
-            state.round!.results.push({
-              playerId: id,
-              score: 0,
-              correct: false,
-              timedOut: false,
-              forfeited: true,
-              submissionId: null,
-            });
-        }
-        return;
-      }
-      if (command.action === 'submit') {
-        const round = state.round;
-        if (!round) throw new AppError(409, 'The round has not started.');
-        if (command.round < (round.number ?? 1)) return;
-        if (command.round !== (round.number ?? 1))
-          throw new AppError(409, 'This is not the active round.');
-        // A finalized attempt is immutable, including when retried with another UUID.
-        if (round.results.some((r) => r.playerId === id)) return;
-        if (state.status !== 'running' || (round.deadline !== null && now >= round.deadline))
+    return this.mutate(
+      code,
+      async (state, tx) => {
+        const player = this.member(state, id);
+        const now = this.now();
+        if (command.action === 'memory-tap' || command.action === 'memory-retry') {
+          if (!state.memory) throw new AppError(409, 'Visual Memory has not started.');
+          const p = state.memory.players.find((p) => p.playerId === id)!;
+          if (state.status !== 'running' || player.forfeited) return;
+          if (command.level !== p.level || command.attempt !== p.attempt) return;
+          if (p.phase !== 'recall') return;
+          if (command.action === 'memory-tap') {
+            if (command.tile >= p.gridSize * p.gridSize)
+              throw new AppError(400, 'Tile is outside this grid.');
+            tapMemory(state.memory, id, command.tile, now);
+          } else retryMemory(state.memory, id, now);
           return;
-        if (now < round.displayUntil)
-          throw new AppError(409, 'Wait until the answer window opens.');
-        const engine = getGame(GAME_ID, state.rulesVersion);
-        const { answer } = engine.generate(round.seed, round.number ?? 1);
-        round.results.push({
-          playerId: id,
-          submittedAnswer: command.answer,
-          submissionId: command.submissionId,
-          score: engine.score(answer, command.answer, now - round.displayUntil, round.number ?? 1),
-          correct: answer === command.answer,
-          timedOut: false,
-          forfeited: false,
-        });
-        return;
-      }
-      if (state.status !== 'lobby') throw new AppError(409, 'This lobby is no longer open.');
-      if (command.action === 'ready') {
-        player.ready = command.ready;
-        return;
-      }
-      if (state.hostId !== id) throw new AppError(403, 'Only the host can start.');
-      if (
-        state.players.length < (state.mode === 'party' ? 3 : 2) ||
-        state.players.length > (state.capacity ?? 2) ||
-        state.players.some((p) => !p.ready || !this.connected(code, p.id))
-      )
-        throw new AppError(
-          409,
-          'The minimum player count must be met and all players must be connected and ready.',
-        );
-      this.startRound(state, 1);
-      state.status = 'running';
-    });
+        }
+        if (command.action === 'rematch') {
+          if (state.status !== 'completed')
+            throw new AppError(409, 'Finish this match before a rematch.');
+          if (!state.rematchCode) {
+            const next = await this.insertRoom(
+              tx,
+              player,
+              state.roundCount ?? 1,
+              state.mode ?? 'duel',
+              state.capacity ?? 2,
+              state.format === 'visual-memory'
+                ? state.rulesVersion
+                : state.roundCount === 10
+                  ? 4
+                  : RULES_VERSION,
+              state.format ?? 'counting-boxes',
+            );
+            state.rematchCode = next.code;
+            if (state.mode === 'solo') {
+              next.memory = startMemory([id], now, true);
+              next.status = 'running';
+              await tx.update(liveRooms).set({ state: next }).where(eq(liveRooms.id, next.id));
+            }
+          }
+          return;
+        }
+        if (command.action === 'leave') {
+          if (state.status === 'lobby') {
+            state.players = state.players.filter((p) => p.id !== id);
+            if (!state.players.length) state.status = 'closed';
+            else if (state.hostId === id) state.hostId = state.players[0].id;
+          } else if (state.status === 'running') {
+            player.forfeited = true;
+            if (state.memory) {
+              const p = state.memory.players.find((p) => p.playerId === id)!;
+              p.phase = 'finished';
+              p.finishReason = 'left';
+              delete p.nextAt;
+              return;
+            }
+            if (!state.round!.results.some((r) => r.playerId === id))
+              state.round!.results.push({
+                playerId: id,
+                score: 0,
+                correct: false,
+                timedOut: false,
+                forfeited: true,
+                submissionId: null,
+              });
+          }
+          return;
+        }
+        if (command.action === 'submit') {
+          if (state.format === 'visual-memory')
+            throw new AppError(409, 'Use tile selections for Visual Memory.');
+          const round = state.round;
+          if (!round) throw new AppError(409, 'The round has not started.');
+          if (command.round < (round.number ?? 1)) return;
+          if (command.round !== (round.number ?? 1))
+            throw new AppError(409, 'This is not the active round.');
+          // A finalized attempt is immutable, including when retried with another UUID.
+          if (round.results.some((r) => r.playerId === id)) return;
+          if (state.status !== 'running' || (round.deadline !== null && now >= round.deadline))
+            return;
+          if (now < round.displayUntil)
+            throw new AppError(409, 'Wait until the answer window opens.');
+          const engine = getGame(GAME_ID, state.rulesVersion);
+          const { answer } = engine.generate(round.seed, round.number ?? 1);
+          round.results.push({
+            playerId: id,
+            submittedAnswer: command.answer,
+            submissionId: command.submissionId,
+            score: engine.score(
+              answer,
+              command.answer,
+              now - round.displayUntil,
+              round.number ?? 1,
+            ),
+            correct: answer === command.answer,
+            timedOut: false,
+            forfeited: false,
+          });
+          return;
+        }
+        if (state.status !== 'lobby') throw new AppError(409, 'This lobby is no longer open.');
+        if (command.action === 'ready') {
+          player.ready = command.ready;
+          return;
+        }
+        if (state.hostId !== id) throw new AppError(403, 'Only the host can start.');
+        if (
+          state.players.length < (state.mode === 'party' ? 3 : 2) ||
+          state.players.length > (state.capacity ?? 2) ||
+          state.players.some((p) => !p.ready || !this.connected(code, p.id))
+        )
+          throw new AppError(
+            409,
+            'The minimum player count must be met and all players must be connected and ready.',
+          );
+        if (state.format === 'visual-memory')
+          state.memory = startMemory(
+            state.players.map((p) => p.id),
+            now,
+            false,
+          );
+        else this.startRound(state, 1);
+        state.status = 'running';
+      },
+      false,
+      id,
+    );
   }
   async watch(code: string, playerId: string, socketId: string) {
     await this.view(code, playerId);
@@ -383,6 +480,7 @@ export class LiveService {
     const now = this.now();
     const snapshot: LiveSnapshot = {
       id: state.id,
+      format: state.format ?? 'counting-boxes',
       code: state.code,
       revision: state.revision,
       rulesVersion: state.rulesVersion,
@@ -395,11 +493,14 @@ export class LiveService {
       serverNow: now,
       rematchCode: state.rematchCode,
       nextAt: state.nextAt,
-      lineup: Array.from({ length: state.roundCount ?? 1 }, (_, i) => ({
-        number: i + 1,
-        gameId: GAME_ID,
-        rules: getGame(GAME_ID, state.rulesVersion).rules(i + 1),
-      })),
+      lineup: Array.from(
+        { length: state.format === 'visual-memory' ? 0 : (state.roundCount ?? 1) },
+        (_, i) => ({
+          number: i + 1,
+          gameId: GAME_ID,
+          rules: getGame(GAME_ID, state.rulesVersion).rules(i + 1),
+        }),
+      ),
       standings: state.players.map((p) => {
         const history =
           state.history ??
@@ -432,6 +533,23 @@ export class LiveService {
         connected: this.connected(state.code, p.id),
       })),
     };
+    if (state.memory) {
+      snapshot.memory = memoryView(state.memory);
+      snapshot.standings = state.memory.players.map((p) => ({
+        playerId: p.playerId,
+        points: p.score,
+        totalScore: p.score,
+        roundWins: 0,
+        rank:
+          p.finishReason === 'left'
+            ? state.players.length
+            : 1 +
+              state.memory!.players.filter(
+                (other) => other.finishReason !== 'left' && other.score > p.score,
+              ).length,
+      }));
+      return snapshot;
+    }
     for (const standing of snapshot.standings) {
       const forfeited = state.players.find((p) => p.id === standing.playerId)!.forfeited;
       standing.rank = forfeited
@@ -476,5 +594,58 @@ export class LiveService {
       }
     }
     return snapshot;
+  }
+
+  /** Personalized projection for HTTP, ACKs, and every socket broadcast. */
+  forPlayer(snapshot: LiveSnapshot, id?: string): LiveSnapshot {
+    if (!snapshot.memory) return snapshot;
+    return {
+      ...snapshot,
+      memory: {
+        ...snapshot.memory,
+        players: snapshot.memory.players.map((p) => {
+          const { highlighted, correct, wrong, ...publicProgress } = p;
+          return {
+            ...publicProgress,
+            correct: p.playerId === id ? correct : [],
+            wrong: p.playerId === id ? wrong : [],
+            highlighted: p.playerId === id ? highlighted : undefined,
+          };
+        }),
+      },
+    };
+  }
+
+  async memoryHistory(playerId: string): Promise<MemoryHistory> {
+    const rows = await this.db
+      .select()
+      .from(liveRooms)
+      .where(
+        and(
+          sql`${liveRooms.state}->>'format' = 'visual-memory'`,
+          sql`${liveRooms.state}->'players' @> ${JSON.stringify([{ id: playerId }])}::jsonb`,
+        ),
+      )
+      .orderBy(desc(liveRooms.updatedAt));
+    const games: MemoryHistory['games'] = [];
+    let bestLevel = 0;
+    for (const row of rows) {
+      const state = row.state as State;
+      const p = state.memory?.players.find((p) => p.playerId === playerId);
+      if (!p) continue;
+      bestLevel = Math.max(bestLevel, p.level);
+      if (games.length < 20)
+        games.push({
+          code: state.code,
+          mode: state.mode ?? 'duel',
+          updatedAt: row.updatedAt,
+          completed: state.status === 'completed',
+          level: p.level,
+          score: p.score,
+          lives: p.lives,
+          rank: this.publicState(state).standings.find((s) => s.playerId === playerId)!.rank,
+        });
+    }
+    return { bestLevel, games };
   }
 }

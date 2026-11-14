@@ -206,10 +206,11 @@ export async function createApp(options: Options) {
     const room = `live:${state.code}`;
     for (const socketId of io.sockets.adapter.rooms.get(room) ?? []) {
       const client = io.sockets.sockets.get(socketId);
-      if (client && !state.players.some((p) => p.id === client.data.playerId))
-        void client.leave(room);
+      if (client) {
+        if (!state.players.some((p) => p.id === client.data.playerId)) void client.leave(room);
+        else client.emit('room:state', live.forPlayer(state, client.data.playerId));
+      }
     }
-    io.to(room).emit('room:state', state);
   };
   // One scheduler per API process. State and original deadlines survive process restarts.
   let ticking = false;
@@ -240,7 +241,7 @@ export async function createApp(options: Options) {
           budget = 0;
           windowAt = Date.now();
         }
-        if (++budget > 120) throw new AppError(429, 'Too many room events.');
+        if (++budget > 600) throw new AppError(429, 'Too many room events.');
         // Revalidate credentials on every privileged event, not just the handshake.
         await identify({
           cookies: app.parseCookie(socket.request.headers.cookie ?? ''),
@@ -319,6 +320,30 @@ export async function createApp(options: Options) {
     const input = createLiveInput.parse(req.body ?? {});
     return live.create(await identify(req, reply), input);
   });
+  app.post('/api/visual-memory/solo', async (req, reply) => {
+    z.object({})
+      .strict()
+      .parse(req.body ?? {});
+    return live.create(await identify(req, reply), {
+      format: 'visual-memory',
+      solo: true,
+      capacity: 1,
+      roundCount: 1,
+    });
+  });
+  app.get('/api/visual-memory/history', async (req, reply) =>
+    live.memoryHistory(await identify(req, reply)),
+  );
+  app.post<{ Params: { code: string } }>(
+    '/api/live/rooms/:code/command',
+    { config: { rateLimit: { max: 600, timeWindow: '1 minute' } } },
+    async (req, reply) =>
+      live.command(
+        liveCode.parse(req.params.code),
+        await identify(req, reply),
+        liveCommand.parse(req.body),
+      ),
+  );
   app.post<{ Params: { code: string } }>('/api/live/rooms/:code/join', async (req, reply) => {
     z.object({})
       .strict()
@@ -353,7 +378,7 @@ export async function createApp(options: Options) {
   app.post('/api/matches', async (req, reply) => {
     const id = await identify(req, reply);
     const input = createMatchInput.parse(req.body);
-    return service.create(id, input.mode, input.rulesVersion);
+    return service.create(id, input.mode, input.rulesVersion, input.roundCount);
   });
   app.get<{ Params: { id: string } }>('/api/matches/:id', async (req, reply) =>
     service.view(matchIdInput.parse(req.params.id), await identify(req, reply)),

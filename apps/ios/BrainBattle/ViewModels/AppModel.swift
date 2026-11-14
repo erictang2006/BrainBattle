@@ -2,6 +2,8 @@ import Foundation
 import Observation
 
 enum AppRoute: Hashable {
+  case visualMemory
+  case memoryLiveMenu
   case liveMenu
   case liveRoom(String)
   case match(String)
@@ -122,12 +124,12 @@ enum AppRoute: Hashable {
       }
     } catch { self.error = error.localizedDescription }
   }
-  func create(mode: MatchMode) async {
+  func create(mode: MatchMode, roundCount: Int = 5) async {
     guard !busy else { return }
     busy = true
     defer { busy = false }
     do {
-      let match = try await api.createMatch(mode: mode)
+      let match = try await api.createMatch(mode: mode, roundCount: roundCount)
       error = nil
       path.append(.match(match.id))
     } catch { self.error = error.localizedDescription }

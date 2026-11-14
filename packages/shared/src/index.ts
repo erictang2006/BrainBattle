@@ -19,6 +19,7 @@ export const createMatchInput = z
   .object({
     mode: z.enum(['challenge', 'solo']).default('challenge'),
     rulesVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(RULES_VERSION),
+    roundCount: z.union([z.literal(5), z.literal(10)]).default(DEFAULT_ROUNDS),
   })
   .strict();
 export const attemptInput = z
@@ -26,7 +27,7 @@ export const attemptInput = z
   .strict();
 export const matchIdInput = z.uuid();
 export const inviteInput = z.string().regex(/^[a-f0-9]{48}$/);
-export const roundInput = z.coerce.number().int().min(1).max(DEFAULT_ROUNDS);
+export const roundInput = z.coerce.number().int().min(1).max(10);
 export type Cube = { x: number; y: number; z: number };
 export type Puzzle = { cubes: Cube[]; gridSize?: number };
 export type RoundRules = {
@@ -96,3 +97,4 @@ export interface ServerToClientEvents {
   'match:changed': (payload: { matchId: string }) => void;
 }
 export type * from './live.js';
+export * from './visual-memory.js';
